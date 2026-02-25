@@ -1,0 +1,16 @@
+{
+  "name": "dayplanner",
+  "version": "1.0.0",
+  "main": "dayplanner.js",
+  "scripts": {
+    "start": "tsc && node ./build/dayplanner.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "devDependencies": {
+    "@types/node": "^25.3.0"
+  }
+}

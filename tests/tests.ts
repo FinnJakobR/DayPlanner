@@ -1,0 +1,1 @@
+function checkRandomDayPlanerGeneration(count: number) {}
