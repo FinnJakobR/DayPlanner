@@ -7,11 +7,13 @@ export function sumDurations(tasks: Task[]): number {
 }
 
 export enum ActivityType {
-  NONE = 0,
-  OUTDOOR_SPORT,
-  INDOOR_SPORT,
-  DEEP_WORK,
-  MENTAL_HEALTH,
+  OUTDOOR_SPORT = 0, //aktivitäten wie Basketball spielen!
+  INDOOR_SPORT, //aktivitäten wie Gym
+  DEEP_WORK, // aktivitäten wie lernen oder alles was mit arbeit / uni zu tun hat
+  MENTAL_HEALTH, //aktivitäten die entspannen sollen auch sowas wie lesen oder so
+  HOUSEHOLD, //aktivitäten die mit Haushalt zu tun haben
+  DRIVING, //aktivitäten die ich mache um zu einer anderen hinzukommen
+  NONE,
   LENGTH,
 }
 

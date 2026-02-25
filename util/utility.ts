@@ -1,6 +1,6 @@
 import { Assignment, CSP } from "../csp/csp.js";
 import Genom, { TaskPriority } from "../models/genom.js";
-import Task from "../models/task.js";
+import Task, { ActivityType } from "../models/task.js";
 import {
   DAY_END_TIME,
   DAY_START_TIME,
@@ -8,6 +8,13 @@ import {
   Time,
   Timing,
 } from "../models/time.js";
+
+export function isSportActivity(activity: ActivityType): boolean {
+  return (
+    activity == ActivityType.INDOOR_SPORT ||
+    activity == ActivityType.OUTDOOR_SPORT
+  );
+}
 
 export async function decodeGenom(genome: Genom): Promise<Assignment[]> {
   const priorities: TaskPriority[] = [];
