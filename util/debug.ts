@@ -14,7 +14,7 @@ function formatTime(t: any): string {
   return `${hh}:${mm}:${ss}`;
 }
 
-export function writeToFile(path: string, schedule: Assignment[]) {
+export function show(schedule: Assignment[]) {
   // Nach Startzeit sortieren
   const sorted = [...schedule].sort(
     (a, b) => inHours(a.start) - inHours(b.start),
@@ -60,5 +60,5 @@ export function writeToFile(path: string, schedule: Assignment[]) {
 
   console.log(output);
 
-  fs.writeFileSync(path, output, { encoding: "utf-8" });
+  //fs.writeFileSync(path, output, { encoding: "utf-8" });
 }

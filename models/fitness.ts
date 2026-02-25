@@ -3,7 +3,6 @@ import { Assignment } from "../csp/csp.js";
 import { getSunTime, TIME, zenith } from "../util/math.js";
 import { ActivityType } from "./task.js";
 import { DAY_START_TIME, Duration, inHours, isBefore, Timing } from "./time.js";
-import { writeToFile } from "../util/debug.js";
 
 const pause_weight = 1.0;
 const gym_weight = 1.0;

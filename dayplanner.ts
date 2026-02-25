@@ -8,7 +8,6 @@ import { elitism, tournamentSelection } from "./models/selection.js";
 import Task, { ActivityType } from "./models/task.js";
 import { inSeconds, Time, Timing } from "./models/time.js";
 import { generateFakeTasks } from "./tests/fakeTasks.js";
-import { writeToFile } from "./util/debug.js";
 import { cloneGenom, decodeGenom } from "./util/utility.js";
 
 const POPULATION = 70;
@@ -24,10 +23,10 @@ function createPopulation(tasks: Task[]): Genom[] {
   return genoms;
 }
 
-const plan_day = async () => {
+const plan_day = async (t: Task[]): Promise<Assignment[]> => {
   let nth_generation = 0;
 
-  const tasks = generateFakeTasks(10);
+  const tasks = t;
 
   tasks[0].deadline = new Time({ hour: 15, minute: 40, second: 0 });
   tasks[0].activity = ActivityType.MENTAL_HEALTH;
@@ -98,7 +97,7 @@ const plan_day = async () => {
     "Sucessfull created Scheudle after " + nth_generation + " generations",
   );
 
-  writeToFile("./tasks.txt", finalSchedule);
+  return finalSchedule;
 };
 
-plan_day();
+export default plan_day;
