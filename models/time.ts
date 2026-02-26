@@ -92,6 +92,14 @@ export class Timing {
 
     return new Timing({ hour, minute, second });
   }
+
+  isDefaultTime(): boolean {
+    return (
+      (this.hour == 0 || this.hour == Infinity) &&
+      (this.minute == 0 || this.minute == Infinity) &&
+      (this.second == 0 || this.second == Infinity)
+    );
+  }
 }
 
 export class Time extends Timing {

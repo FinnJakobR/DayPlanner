@@ -11,6 +11,21 @@ export interface Coord {
   long: number;
 }
 
+// Standard Normal Zufall
+function randomGaussian(): number {
+  let u = 0,
+    v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
+
+// LogNormal Sampling
+export function sampleLogNormal(mu: number, sigma: number): number {
+  const z = randomGaussian(); // N(0,1)
+  return Math.exp(mu + sigma * z); // LogNormal
+}
+
 export function haversine(alpha: number) {
   return (1 - Math.cos(alpha)) / 2;
 }
