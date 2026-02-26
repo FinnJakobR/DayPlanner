@@ -1,7 +1,7 @@
-import { Assignment } from "../csp/csp";
-import { Action } from "./action";
-import { Policy } from "./policy";
-import State from "./state";
+import { Assignment } from "../csp/csp.js";
+import { Action } from "./action.js";
+import { Policy } from "./policy.js";
+import State from "./state.js";
 
 export interface Agent {
   selectAction(state: State): Action;

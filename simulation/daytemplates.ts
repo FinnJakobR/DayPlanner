@@ -1,11 +1,11 @@
-import Task, { ActivityType } from "../models/task";
-import { Duration, inHours, Time } from "../models/time";
-import { FAKE_TASKS } from "../tests/fakeTasks";
+import Task, { ActivityType } from "../models/task.js";
+import { Duration, inHours, Time } from "../models/time.js";
+import { FAKE_TASKS } from "../tests/fakeTasks.js";
 import {
   getRandomArrayIndex,
   getRandomInt,
   getRandomTimeFromIntervall,
-} from "../util/utility";
+} from "../util/utility.js";
 
 interface ActivityIntervall {
   num: number;
@@ -23,7 +23,7 @@ export class DayTemplate {
   generateRandomActivities(): ActivityType[] {
     let acts: ActivityType[] = [];
 
-    for (let x = 0; x < ActivityType.LENGTH; x++) {
+    for (let x = 0; x < ActivityType.LENGTH - 1; x++) {
       for (
         let j = 0;
         j < Math.max(0, this.activities[x].num + getRandomInt(-1, 1));
@@ -47,7 +47,11 @@ export class DayTemplate {
         this.activities[act].maxDuration,
       );
 
-      const deadline = new Time({ hour: 0, minute: 0, second: 0 });
+      const deadline = new Time({
+        hour: Infinity,
+        minute: Infinity,
+        second: Infinity,
+      });
 
       const randomPriority = getRandomInt(0, 10);
 
@@ -72,36 +76,36 @@ export class NormalWeekDayTemplate extends DayTemplate {
 
     this.activities[ActivityType.OUTDOOR_SPORT] = {
       num: 1,
-      minDuration: new Duration({ hour: 0, minute: 45, second: 0 }),
-      maxDuration: new Duration({ hour: 2, minute: 0, second: 0 }),
+      minDuration: new Duration({ hour: 0, minute: 10, second: 0 }),
+      maxDuration: new Duration({ hour: 1, minute: 0, second: 0 }),
     };
 
     this.activities[ActivityType.INDOOR_SPORT] = {
       num: 1,
-      minDuration: new Duration({ hour: 1, minute: 30, second: 0 }),
-      maxDuration: new Duration({ hour: 2, minute: 30, second: 0 }),
+      minDuration: new Duration({ hour: 0, minute: 10, second: 0 }),
+      maxDuration: new Duration({ hour: 0, minute: 20, second: 0 }),
     };
 
     this.activities[ActivityType.DEEP_WORK] = {
-      num: 2,
+      num: 0,
       minDuration: new Duration({ hour: 1, minute: 0, second: 0 }),
-      maxDuration: new Duration({ hour: 3, minute: 0, second: 0 }),
+      maxDuration: new Duration({ hour: 2, minute: 0, second: 0 }),
     };
 
     this.activities[ActivityType.MENTAL_HEALTH] = {
       num: 1,
       minDuration: new Duration({ hour: 0, minute: 20, second: 0 }),
-      maxDuration: new Duration({ hour: 2, minute: 0, second: 0 }),
+      maxDuration: new Duration({ hour: 1, minute: 0, second: 0 }),
     };
 
     this.activities[ActivityType.HOUSEHOLD] = {
-      num: 2,
+      num: 1,
       minDuration: new Duration({ hour: 0, minute: 10, second: 0 }),
       maxDuration: new Duration({ hour: 0, minute: 35, second: 0 }),
     };
 
     this.activities[ActivityType.DRIVING] = {
-      num: 2,
+      num: 0,
       minDuration: new Duration({ hour: 0, minute: 20, second: 0 }),
       maxDuration: new Duration({ hour: 0, minute: 50, second: 0 }),
     };
@@ -131,19 +135,19 @@ export class SemesterHolidayTemplate extends DayTemplate {
     };
 
     this.activities[ActivityType.MENTAL_HEALTH] = {
-      num: 3,
+      num: 1,
       minDuration: new Duration({ hour: 0, minute: 20, second: 0 }),
       maxDuration: new Duration({ hour: 2, minute: 0, second: 0 }),
     };
 
     this.activities[ActivityType.HOUSEHOLD] = {
-      num: 2,
+      num: 1,
       minDuration: new Duration({ hour: 0, minute: 10, second: 0 }),
       maxDuration: new Duration({ hour: 0, minute: 35, second: 0 }),
     };
 
     this.activities[ActivityType.DRIVING] = {
-      num: 2,
+      num: 1,
       minDuration: new Duration({ hour: 0, minute: 20, second: 0 }),
       maxDuration: new Duration({ hour: 0, minute: 50, second: 0 }),
     };
@@ -167,13 +171,13 @@ export class DeepFocusDayTemplate extends DayTemplate {
     };
 
     this.activities[ActivityType.DEEP_WORK] = {
-      num: 4,
+      num: 1,
       minDuration: new Duration({ hour: 1, minute: 0, second: 0 }),
       maxDuration: new Duration({ hour: 2, minute: 30, second: 0 }),
     };
 
     this.activities[ActivityType.MENTAL_HEALTH] = {
-      num: 3,
+      num: 2,
       minDuration: new Duration({ hour: 0, minute: 20, second: 0 }),
       maxDuration: new Duration({ hour: 1, minute: 0, second: 0 }),
     };
@@ -185,7 +189,7 @@ export class DeepFocusDayTemplate extends DayTemplate {
     };
 
     this.activities[ActivityType.DRIVING] = {
-      num: 2,
+      num: 1,
       minDuration: new Duration({ hour: 0, minute: 20, second: 0 }),
       maxDuration: new Duration({ hour: 0, minute: 50, second: 0 }),
     };
@@ -215,19 +219,19 @@ export class WeekendDayTemplate extends DayTemplate {
     };
 
     this.activities[ActivityType.MENTAL_HEALTH] = {
-      num: 3,
+      num: 1,
       minDuration: new Duration({ hour: 0, minute: 20, second: 0 }),
       maxDuration: new Duration({ hour: 1, minute: 0, second: 0 }),
     };
 
     this.activities[ActivityType.HOUSEHOLD] = {
-      num: 4,
+      num: 2,
       minDuration: new Duration({ hour: 0, minute: 10, second: 0 }),
       maxDuration: new Duration({ hour: 0, minute: 35, second: 0 }),
     };
 
     this.activities[ActivityType.DRIVING] = {
-      num: 2,
+      num: 1,
       minDuration: new Duration({ hour: 0, minute: 20, second: 0 }),
       maxDuration: new Duration({ hour: 0, minute: 50, second: 0 }),
     };

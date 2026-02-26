@@ -7,7 +7,7 @@ export default class State {
   public stress: number = 0.0;
   public remaining_tasks: number = 0.0;
   public delayInMinutes: number = 0.0;
-  public nextDeadlinesInMinutes: number[] = [];
+  public nextDeadlineInMinutes: number = 0.0;
   public scheudle: Assignment[] = [];
 
   constructor() {}

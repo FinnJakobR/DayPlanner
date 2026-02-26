@@ -16,6 +16,16 @@ export function inHours(a: Time): number {
   return a.hour + a.minute / 60 + a.second / 3600;
 }
 
+export function fromMinutes(a: number): Time {
+  const hour = Math.floor(a / 60);
+  const minuteFloat = a % 60;
+
+  const minute = Math.floor(minuteFloat);
+  const second = Math.round((minuteFloat - minute) * 60);
+
+  return new Time({ hour: hour, minute: minute, second: second });
+}
+
 export function isBefore(a: Time, b: Time): boolean {
   return inSeconds(a) < inSeconds(b);
 }
