@@ -34,6 +34,10 @@ export function isAfter(a: Time, b: Time): boolean {
   return !isBefore(a, b);
 }
 
+export function fit(a0: Time, a1: Time, b0: Time, b1: Time): boolean {
+  return isAfter(b0, a0) && isBefore(b1, a1);
+}
+
 export function normalizeTime(t: Time): number {
   return (
     (inSeconds(t) - inSeconds(DAY_START_TIME)) /

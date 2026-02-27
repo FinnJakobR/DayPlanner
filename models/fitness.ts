@@ -9,7 +9,7 @@ const gym_weight = 1.0;
 const outdoor_weight = 1.0;
 const deep_work_weight = 1.0;
 
-function getPauseTime(scheudle: Assignment[]) {
+export function getPauseTime(scheudle: Assignment[]) {
   const pauses: Duration[] = [];
 
   if (scheudle.length == 1) return [];

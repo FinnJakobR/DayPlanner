@@ -4,6 +4,7 @@ import plan_day from "../dayplanner.js";
 import Task, { ActivityType } from "../models/task.js";
 import {
   Duration,
+  fit,
   fromMinutes,
   inMinutes,
   isBefore,
@@ -31,10 +32,18 @@ import State from "./state.js";
 import StepResult from "./step.js";
 import { sampleLogNormal } from "../util/math.js";
 import { stat } from "node:fs";
+import { getPauseTime } from "../models/fitness.js";
+
+enum EnvironmentError {
+  COULD_NOT_DELAY_TASK,
+
+  NONE,
+}
 
 export default class Enviorment {
   public currentState: State = new State();
   public isStarted: boolean = false;
+  public currentError: EnvironmentError = EnvironmentError.NONE;
 
   constructor() {}
 
@@ -74,15 +83,17 @@ export default class Enviorment {
   async reset() {
     this.currentState = new State();
     this.isStarted = false;
+    this.currentError = EnvironmentError.NONE;
+
     await this.start();
   }
 
   step(action: Action): StepResult {
     const newState = this.applyAction(this.currentState, action);
     const reward = this.computeReward(this.currentState, newState, action);
-    console.log(reward, action);
     const done = newState.remaining_tasks == 0; //this.checkDone(newState);
     this.currentState = newState;
+    this.currentError = EnvironmentError.NONE;
 
     return { nextState: newState, reward, done };
   }
@@ -146,47 +157,6 @@ export default class Enviorment {
     return reward;
   }
 
-  rescheudleTasks(id: string, time: Time, state: State) {
-    const task = state.scheudle.find((a) => a.v.id == id);
-
-    if (!task) unreachable();
-
-    task!.start = time;
-    task!.end = Time.add(time, task!.v.task.duration);
-  }
-
-  changeDuration(id: string, duration: Duration, state: State) {
-    const task = state.scheudle.find((a) => a.v.id == id);
-
-    if (!task) unreachable();
-
-    task!.v.task.duration = duration;
-
-    task!.end = Timing.add(task!.start, duration);
-  }
-
-  splitTasks(id: string, duration: Duration, time: Time, state: State) {
-    const a = state.scheudle.find((a) => a.v.id == id)!;
-
-    if (!a) unreachable();
-
-    const task = a.v.task;
-
-    const newTask = new Task({
-      title: task.title,
-      duration: Timing.diff(task.duration, duration),
-      deadline: task.deadline,
-      priority: task.priority,
-      activity: task.activity,
-    });
-
-    task.duration = duration;
-    a.end = Timing.add(a.start, duration);
-
-    const newA = new Assignment(new CSPVertex(newTask), time);
-    state.scheudle.push(newA);
-  }
-
   nextTask(state: State) {
     if (state.remaining_tasks > 0) {
       state.remaining_tasks--;
@@ -217,65 +187,76 @@ export default class Enviorment {
     return deadline;
   }
 
-  applyAction(state: State, action: Action): State {
-    let newState = cloneState(state);
+  delayTask(id: string, state: State): State {
+    const task = state.scheudle.find((e) => e.v.id == id);
 
-    if (action.taskId.length != 0) {
-      switch (action.type) {
-        case ActionType.RESCHEUDLE_TASK:
-          const rescheudle_id = action.taskId;
-          const rescheudle_time = action.time;
+    if (!task) unreachable("!task");
 
-          this.rescheudleTasks(rescheudle_id, rescheudle_time, newState);
-          break;
+    const posOfTask = state.scheudle.findIndex((e) => e.v.id == id);
 
-        case ActionType.CHANGE_DURATION:
-          const break_duration = action.duration;
-          const change_duration_id = action.taskId;
+    if (posOfTask < 0) unreachable("posOfTask < 0");
 
-          this.changeDuration(change_duration_id, break_duration, newState);
-          break;
+    const pauses = getPauseTime(state.scheudle);
 
-        case ActionType.SPLIT_TASK:
-          const split_id = action.taskId;
-          const split_time = action.time;
-          const split_duration = action.duration;
+    let fit = false;
 
-          this.splitTasks(split_id, split_duration, split_time, newState);
-          break;
+    for (let p = posOfTask; p < pauses.length; p++) {
+      const pause = pauses[p];
+      if (task!.v.task.duration <= pause) {
+        fit = true;
+        //setze den Tasks möglich mittig!
 
-        default:
-          unreachable();
+        const taskBeforePause = state.scheudle[p];
+
+        const pauseInMinutes = inMinutes(pause);
+        const taskDurationInMinutes = inMinutes(task!.v.task.duration);
+
+        const div = pauseInMinutes / taskDurationInMinutes;
+
+        const right = Math.floor(div);
+
+        const newStart = Timing.add(fromMinutes(right), taskBeforePause.end);
+
+        task!.start = newStart;
+        task!.end = Timing.add(task!.start, task!.v.task.duration);
       }
     }
 
-    newState.scheudle = sortScheudle(newState.scheudle);
+    if (!fit) this.currentError = EnvironmentError.COULD_NOT_DELAY_TASK;
 
-    let taskBefore = newState.current_task;
-    newState = this.nextTask(newState);
+    return state;
+  }
 
-    if (newState.remaining_tasks == 0) return newState;
+  applyAction(state: State, action: Action): State {
+    let newState = cloneState(state);
 
-    let currentTask = newState.current_task;
+    const id = action.id;
 
-    const t0 = newState.scheudle[taskBefore];
-    const t1 = newState.scheudle[currentTask];
+    switch (action.action) {
+      case ActionType.DELAY_TASK:
+        newState = this.delayTask(id, newState);
+        break;
 
-    const pause = Timing.diff(t1.start, t0.end);
-    const pauseInMinutes = this.generateOverrun(pause);
+      case ActionType.FOCUS_ON_TASK:
+        break;
 
-    newState.energy += Math.min(100, 0.001 * pauseInMinutes);
-    newState.stress -= Math.min(100, 0.001 * pauseInMinutes);
+      case ActionType.INSERT_BREAK:
+        //Zb wenn die overrun sehr hoch ist einfach mal abschalten und durchatmen
+        break;
 
-    const delayInMinutes = this.generateOverrun(t1.v.task.duration);
+      case ActionType.PULL_TASK_EARLIER:
+        //zb. wenn stress sehr oben unten dann mache was für mental Health
+        break;
 
-    newState.delayInMinutes = delayInMinutes;
-    newState.stress += Math.min(100, 0.001 * delayInMinutes);
+      case ActionType.REDUCE_SCOPE:
+        break;
 
-    newState.nextDeadlineInMinutes = this.getNextDeadline(
-      newState.scheudle,
-      newState.current_task,
-    );
+      case ActionType.SPLIT_TASK:
+        break;
+
+      default:
+        unreachable("in applyAction()");
+    }
 
     return newState;
   }
