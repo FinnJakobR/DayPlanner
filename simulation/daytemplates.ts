@@ -177,7 +177,7 @@ export class DeepFocusDayTemplate extends DayTemplate {
     };
 
     this.activities[ActivityType.MENTAL_HEALTH] = {
-      num: 2,
+      num: 1,
       minDuration: new Duration({ hour: 0, minute: 20, second: 0 }),
       maxDuration: new Duration({ hour: 1, minute: 0, second: 0 }),
     };
@@ -225,7 +225,7 @@ export class WeekendDayTemplate extends DayTemplate {
     };
 
     this.activities[ActivityType.HOUSEHOLD] = {
-      num: 2,
+      num: 1,
       minDuration: new Duration({ hour: 0, minute: 10, second: 0 }),
       maxDuration: new Duration({ hour: 0, minute: 35, second: 0 }),
     };

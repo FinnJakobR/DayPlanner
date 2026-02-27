@@ -12,6 +12,8 @@ const deep_work_weight = 1.0;
 function getPauseTime(scheudle: Assignment[]) {
   const pauses: Duration[] = [];
 
+  if (scheudle.length == 1) return [];
+
   let a = scheudle[0].end;
   let b = scheudle[1].start;
 
