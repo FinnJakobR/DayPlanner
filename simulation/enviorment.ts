@@ -3,10 +3,12 @@ import { CSPGraph, CSPVertex } from "../csp/structs.js";
 import plan_day from "../dayplanner.js";
 import Task, { ActivityType } from "../models/task.js";
 import {
+  DAY_END_TIME,
   Duration,
   fit,
   fromMinutes,
   inMinutes,
+  isAfter,
   isBefore,
   Time,
   Timing,
@@ -15,10 +17,13 @@ import { FAKE_TASKS } from "../tests/fakeTasks.js";
 import {
   cloneGenom,
   cloneState,
+  energyLoss,
+  findSlotByMinute,
   getRandomArrayIndex,
   getRandomInt,
   isSportActivity,
   sortScheudle,
+  STEP_IN_MIN,
   unreachable,
 } from "../util/utility.js";
 import { Action, ActionType } from "./action.js";
@@ -36,7 +41,10 @@ import { getPauseTime } from "../models/fitness.js";
 
 enum EnvironmentError {
   COULD_NOT_DELAY_TASK,
-
+  COULD_NOT_INSERT_GAP,
+  COULD_NOT_FOCUS_TASK,
+  COULD_NOT_PULL_TASK_EARLIER,
+  COULD_NOT_SPLIT_TASK,
   NONE,
 }
 
@@ -89,7 +97,8 @@ export default class Enviorment {
   }
 
   step(action: Action): StepResult {
-    const newState = this.applyAction(this.currentState, action);
+    let newState = this.applyAction(this.currentState, action);
+    newState = this.simulate(newState);
     const reward = this.computeReward(this.currentState, newState, action);
     const done = newState.remaining_tasks == 0; //this.checkDone(newState);
     this.currentState = newState;
@@ -124,37 +133,48 @@ export default class Enviorment {
   }
 
   computeReward(state: State, newState: State, action: Action): number {
-    let reward = 0.0;
+    let reward = 0;
+    const prev = state;
+    const next = newState;
 
-    const tasks = newState.scheudle.map((e) => e.v.task);
+    // ===== 1️⃣ Fortschritt belohnen =====
+    const taskProgress = prev.remaining_tasks - next.remaining_tasks;
 
-    //check if Overlap
+    reward += taskProgress * 20;
 
-    const scheudle = newState.scheudle;
+    // ===== 2️⃣ Energie stabil halten =====
+    const deltaEnergy = next.energy - prev.energy;
 
-    if (this.hasOverlapp(scheudle)) reward -= 5;
+    reward += deltaEnergy * 0.5;
 
-    if (this.afterDeadline(scheudle)) reward -= 14;
+    // ===== 3️⃣ Stress senken belohnen =====
+    const deltaStress = prev.stress - next.stress;
 
-    const deltaStress = newState.stress - state.stress;
-    const deltaEnergy = newState.energy - state.energy;
+    reward += deltaStress * 0.7;
 
-    reward += deltaStress * 2.0;
-    reward += deltaEnergy * 1.0;
+    // ===== 4️⃣ Deadline-Verstoß stark bestrafen =====
+    if (this.afterDeadline(next.scheudle)) {
+      reward -= 25;
+    }
 
-    const tasksProgress = state.remaining_tasks - newState.remaining_tasks;
-    reward += tasksProgress * 10;
+    // ===== 5️⃣ Overlap bestrafen =====
+    if (this.hasOverlapp(next.scheudle)) {
+      reward -= 10;
+    }
 
-    const deltaDelay = newState.delayInMinutes - state.delayInMinutes;
-    reward -= deltaDelay * 5;
+    if (this.currentError != EnvironmentError.NONE) {
+      reward -= 15;
+    }
 
+    // ===== 6️⃣ Delay bestrafen =====
+    const deltaDelay = next.delayInMinutes - prev.delayInMinutes;
+
+    reward -= deltaDelay * 2;
+
+    // ===== 7️⃣ Kleine Step-Kosten (Anti-Idle) =====
     reward -= 0.01;
 
-    if (action.taskId.length == 0) reward -= 15;
-
-    reward = Math.max(-50, Math.min(50, reward));
-
-    return reward;
+    return Math.max(-50, Math.min(50, reward));
   }
 
   nextTask(state: State) {
@@ -227,6 +247,235 @@ export default class Enviorment {
     return state;
   }
 
+  insertBreak(id: string, state: State): State {
+    const task = state.scheudle.find((e) => e.v.id == id);
+
+    if (!task) unreachable("!task in InsertBreak()");
+
+    const currentMinute = state.time;
+
+    const duration: Duration = new Duration({ hour: 0, minute: 3, second: 0 });
+
+    if (
+      inMinutes(Timing.diff(DAY_END_TIME, fromMinutes(currentMinute))) <
+      inMinutes(duration)
+    ) {
+      this.currentError = EnvironmentError.COULD_NOT_INSERT_GAP;
+      return state;
+    }
+
+    const remainingTaskDuration = Timing.diff(
+      task!.end,
+      fromMinutes(currentMinute),
+    );
+
+    if (
+      inMinutes(Timing.add(fromMinutes(currentMinute), duration)) +
+        inMinutes(remainingTaskDuration) >
+      inMinutes(DAY_END_TIME)
+    ) {
+      this.currentError = EnvironmentError.COULD_NOT_INSERT_GAP;
+      return state;
+    }
+
+    task!.end = fromMinutes(currentMinute);
+    task!.v.task.duration = Timing.add(task!.start, fromMinutes(currentMinute));
+
+    const newTask = new Assignment(
+      new CSPVertex(
+        new Task({
+          title: task!.v.task.title,
+          duration: Timing.diff(task!.end, fromMinutes(currentMinute)),
+          deadline: task!.v.task.deadline,
+          priority: task!.v.task.priority,
+          activity: task!.v.task.activity,
+        }),
+      ),
+      Timing.add(fromMinutes(currentMinute), fromMinutes(1)),
+    );
+
+    newTask.end = Timing.add(newTask.start, newTask.v.task.duration);
+
+    state.scheudle.push(newTask);
+
+    return state;
+  }
+
+  focusOnTask(id: string, state: State): State {
+    const task = state.scheudle.find((e) => e.v.task.id == id);
+    const scheudle = state.scheudle;
+    if (!task) unreachable("!task in focusOnTask()");
+
+    const currentMinute = state.time;
+    const duration = task!.v.task.duration;
+    const taskStart = task!.start;
+
+    const { index, isPause } = findSlotByMinute(currentMinute, scheudle);
+    const pauses = getPauseTime(scheudle);
+
+    if (isPause) {
+      const isLongerThanPause =
+        Timing.add(fromMinutes(currentMinute), duration) > pauses[index];
+
+      if (isLongerThanPause) {
+        const diff = Timing.diff(
+          Timing.add(fromMinutes(currentMinute), duration),
+          pauses[index],
+        );
+
+        //packe alle tasks dahinter
+        scheudle
+          .filter((e) => isAfter(e.start, taskStart))
+          .forEach((e) => {
+            e.start = Timing.add(e.start, diff);
+            e.end = Timing.add(e.end, diff);
+          });
+      }
+    } else {
+      const runningTask = scheudle[index];
+      const remainingDuration = Timing.diff(
+        runningTask.v.task.duration,
+        fromMinutes(currentMinute),
+      );
+
+      //wenn wir keine pause finde in der der splitted tasks passt hauen wir nen Error hinter
+      if (
+        !pauses.find(
+          (e, i) => i > index && inMinutes(e) >= inMinutes(remainingDuration),
+        )
+      ) {
+        this.currentError = EnvironmentError.COULD_NOT_FOCUS_TASK;
+        return state;
+      }
+
+      const isLongerThanPause =
+        inMinutes(Timing.add(remainingDuration, pauses[index])) <
+        inMinutes(task!.v.task.duration);
+
+      if (isLongerThanPause) {
+        const diff = Timing.diff(
+          task!.v.task.duration,
+          Timing.add(remainingDuration, pauses[index]),
+        );
+
+        scheudle
+          .filter((e) => isAfter(e.start, runningTask.start))
+          .forEach((e) => {
+            e.start = Timing.add(e.start, diff);
+            e.end = Timing.add(e.end, diff);
+          });
+      }
+
+      state = this.splitTask(runningTask.v.id, state);
+
+      if (this.currentError == EnvironmentError.COULD_NOT_SPLIT_TASK) {
+        this.currentError = EnvironmentError.COULD_NOT_FOCUS_TASK;
+        return state;
+      }
+    }
+
+    task!.start = fromMinutes(currentMinute);
+    task!.end = Timing.add(task!.start, duration);
+    return state;
+  }
+
+  pullTaskEarlier(id: string, state: State): State {
+    const scheudle = state.scheudle;
+    const task = scheudle.find((e) => e.v.id == id);
+    const currentMinute = state.time;
+
+    if (!task) unreachable("!task in pullTaskEarlier()");
+
+    const duration = task!.v.task.duration;
+    const indexOfTask = scheudle.findIndex((e) => e.v.id == id);
+
+    if (indexOfTask < 0) unreachable("indexOfTask < 0 in pullTaskEarlier()");
+
+    const { index } = findSlotByMinute(currentMinute, scheudle);
+
+    if (index == indexOfTask) {
+      this.currentError = EnvironmentError.COULD_NOT_PULL_TASK_EARLIER;
+      return state;
+    }
+
+    const pauses = getPauseTime(scheudle);
+
+    let fit = -1;
+
+    for (let o = indexOfTask - 1; o >= 0; o--) {
+      if (inMinutes(pauses[o]) >= inMinutes(duration)) {
+        fit = o;
+        break;
+      }
+    }
+
+    if (fit > 0) {
+      const start = scheudle[fit].end;
+      task!.start = start;
+      task!.end = Timing.add(start, duration);
+    } else {
+      this.currentError = EnvironmentError.COULD_NOT_PULL_TASK_EARLIER;
+    }
+
+    return state;
+  }
+
+  splitTask(id: string, state: State): State {
+    const scheudle = state.scheudle;
+    const currentMinute = state.time;
+    const task = scheudle.find((e) => e.v.id == id);
+
+    if (!task) unreachable("!task in splitTask()");
+
+    const duration = task!.v.task.duration;
+
+    //find next availbe pause
+    let fit = -1;
+    const pauses = getPauseTime(scheudle);
+    const indexOfTask = scheudle.findIndex((e) => e.v.id == id);
+    const remainingDuration = Timing.diff(duration, fromMinutes(currentMinute));
+
+    for (let o = indexOfTask + 1; o < pauses.length; o++) {
+      const currentPause = pauses[o];
+      if (inMinutes(currentPause) >= inMinutes(remainingDuration)) {
+        fit = o;
+        break;
+      }
+    }
+
+    if (fit < 0) {
+      this.currentError = EnvironmentError.COULD_NOT_SPLIT_TASK;
+      return state;
+    } else {
+      const start = scheudle[fit].end;
+
+      const newTask = new Assignment(
+        new CSPVertex(
+          new Task({
+            title: task!.v.task.title,
+            duration: remainingDuration,
+            priority: task!.v.task.priority,
+            deadline: task!.v.task.deadline,
+            activity: task!.v.task.activity,
+          }),
+        ),
+        start,
+      );
+
+      newTask.end = Timing.add(start, remainingDuration);
+
+      state.scheudle.push(newTask);
+    }
+
+    task!.end = fromMinutes(currentMinute);
+    task!.v.task.duration = Timing.diff(
+      fromMinutes(currentMinute),
+      task!.start,
+    );
+
+    return state;
+  }
+
   applyAction(state: State, action: Action): State {
     let newState = cloneState(state);
 
@@ -238,26 +487,158 @@ export default class Enviorment {
         break;
 
       case ActionType.FOCUS_ON_TASK:
+        newState = this.focusOnTask(id, newState);
         break;
 
       case ActionType.INSERT_BREAK:
-        //Zb wenn die overrun sehr hoch ist einfach mal abschalten und durchatmen
+        newState = this.insertBreak(id, newState);
         break;
 
       case ActionType.PULL_TASK_EARLIER:
-        //zb. wenn stress sehr oben unten dann mache was für mental Health
-        break;
-
-      case ActionType.REDUCE_SCOPE:
+        newState = this.pullTaskEarlier(id, newState);
         break;
 
       case ActionType.SPLIT_TASK:
+        newState = this.splitTask(id, newState);
+        break;
+
+      case ActionType.DO_NOTHING:
         break;
 
       default:
         unreachable("in applyAction()");
     }
 
+    state.scheudle = sortScheudle(state.scheudle);
+
     return newState;
+  }
+
+  simulate(state: State): State {
+    if (
+      isAfter(state.scheudle[state.current_task].end, fromMinutes(state.time))
+    ) {
+      //jetzt overrun
+      state.delayInMinutes -= Math.max(0, STEP_IN_MIN);
+    }
+
+    state.time += STEP_IN_MIN;
+
+    const energyDeepWeight =
+      state.scheudle[state.current_task].v.task.activity ==
+      ActivityType.DEEP_WORK
+        ? 1.2
+        : 1;
+
+    const energyMentalHealth =
+      state.scheudle[state.current_task].v.task.activity ==
+      ActivityType.MENTAL_HEALTH
+        ? 0.5
+        : 1;
+
+    if (!state.isPause) {
+      const start = Timing.diff(
+        fromMinutes(state.time),
+        state.scheudle[state.current_task].start,
+      );
+
+      const minutesFocused = inMinutes(start);
+      const prevMinutes = Math.max(0, minutesFocused - STEP_IN_MIN);
+
+      const delta = energyLoss(minutesFocused) - energyLoss(prevMinutes);
+
+      state.energy -= energyDeepWeight * energyMentalHealth * delta;
+    } else {
+      const minutesPaused = inMinutes(
+        Timing.diff(
+          fromMinutes(state.time),
+          state.scheudle[state.current_task].end,
+        ),
+      );
+
+      const prevMinutes = Math.max(0, minutesPaused - STEP_IN_MIN);
+
+      const deltaRecovery = Math.sqrt(minutesPaused) - Math.sqrt(prevMinutes);
+
+      state.energy += 0.5 * deltaRecovery;
+    }
+
+    state.energy = Math.max(0, Math.min(100, state.energy));
+
+    //calc stress
+    if (!state.isPause) {
+      const currentAssignment = state.scheudle[state.current_task];
+      const activity = currentAssignment.v.task.activity;
+
+      // ===== Activity Weights =====
+      const deepWorkWeight = activity === ActivityType.DEEP_WORK ? 1.3 : 1;
+
+      const mentalHealthWeight =
+        activity === ActivityType.MENTAL_HEALTH ? -1.5 : 1;
+
+      // ===== 1️⃣ Baseline Task Pressure =====
+      const taskPressure = Math.sqrt(state.remaining_tasks) * 0.1;
+
+      // ===== 2️⃣ Deadline Pressure =====
+      let deadlinePressure = 0;
+      const deadline = currentAssignment.v.task.deadline;
+
+      if (!deadline.isDefaultTime()) {
+        const minutesToDeadline = inMinutes(deadline) - state.time;
+
+        if (minutesToDeadline > 0) {
+          if (minutesToDeadline < 120) {
+            deadlinePressure = Math.exp((120 - minutesToDeadline) / 40) * 0.02;
+          }
+        } else {
+          deadlinePressure = 2.0;
+        }
+      }
+
+      // ===== 3️⃣ Fatigue Stress =====
+      const fatigueStress = (100 - state.energy) * 0.01;
+
+      // ===== Gesamt =====
+      let deltaStress =
+        deepWorkWeight * (taskPressure + deadlinePressure + fatigueStress);
+
+      // 💚 Mental Health reduziert Stress aktiv
+      if (activity === ActivityType.MENTAL_HEALTH) {
+        const relief = 0.5 + state.stress / 200;
+        deltaStress -= relief;
+      }
+
+      state.stress += deltaStress;
+    } else {
+      // ===== Pause reduziert Stress =====
+      const recovery = 0.3 + state.energy / 200;
+      state.stress -= recovery;
+    }
+
+    state.stress = Math.max(0, Math.min(100, state.stress));
+
+    if (
+      isAfter(
+        state.scheudle[state.current_task].end,
+        fromMinutes(state.time),
+      ) &&
+      state.delayInMinutes == 0
+    ) {
+      const { index, isPause } = findSlotByMinute(state.time, state.scheudle);
+
+      state.current_task = index;
+      state.isPause = isPause;
+      state.remaining_tasks = state.scheudle.length - state.current_task;
+
+      let mu = 0.1;
+
+      if (state.energy < 60) {
+        mu += (60 - state.energy) / 150;
+      }
+
+      state.delayInMinutes = Math.floor(sampleLogNormal(mu, 0.25));
+    }
+
+    return state;
   }
 }

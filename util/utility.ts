@@ -5,14 +5,47 @@ import Task, { ActivityType } from "../models/task.js";
 import {
   DAY_END_TIME,
   DAY_START_TIME,
+  fromMinutes,
   inMinutes,
   inSeconds,
+  isAfter,
+  isBefore,
   Time,
   Timing,
 } from "../models/time.js";
 import State from "../simulation/state.js";
 
 export const MAX_TODOS = 100;
+export const STEP_IN_MIN = 5;
+
+export function energyLoss(minutesFocused: number): number {
+  const L = 20; // max loss
+  const k = 0.05; // steepness
+  const x0 = 60; // fatigue threshold
+
+  return L / (1 + Math.exp(-k * (minutesFocused - x0)));
+}
+
+// find Task by Minute when in Task then !isPause when pause then index is the last task before the pause!
+export function findSlotByMinute(minute: number, scheudle: Assignment[]) {
+  const time = fromMinutes(minute);
+
+  let i = 0;
+  for (const a of scheudle) {
+    if (isTimeInTask(time, a)) return { index: i, isPause: false };
+  }
+
+  for (const a of scheudle) {
+    if (!isAfter(time, a.end)) break;
+    i++;
+  }
+
+  return { index: i, isPause: true };
+}
+
+export function isTimeInTask(t: Time, slot: Assignment): boolean {
+  return isAfter(t, slot.start) && isBefore(t, slot.end);
+}
 
 export function isSportActivity(activity: ActivityType): boolean {
   return (

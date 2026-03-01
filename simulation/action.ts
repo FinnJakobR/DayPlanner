@@ -24,7 +24,6 @@ export enum ActionType {
   SPLIT_TASK,
   INSERT_BREAK,
   PULL_TASK_EARLIER,
-  REDUCE_SCOPE,
   DO_NOTHING,
   LENGTH,
 }
