@@ -18,6 +18,43 @@ import State from "../simulation/state.js";
 export const MAX_TODOS = 100;
 export const STEP_IN_MIN = 2;
 
+export const MIN_BLOCK_LENGTH_IN_MIN = 5;
+
+export function rescheudle(
+  startTime: Time,
+  state: State,
+  schedule: Assignment[],
+): Assignment[] {
+  const totalDuration = inMinutes(
+    getDurationSum(schedule.map((e) => e.v.task)),
+  );
+
+  const availableTime = inMinutes(DAY_END_TIME) - inMinutes(startTime);
+
+  if (totalDuration > availableTime) {
+    console.log("No feasible schedule!");
+    return schedule;
+  }
+
+  // ===== Reverse Greedy Packing =====
+  let cursor = inMinutes(DAY_END_TIME);
+
+  for (let i = schedule.length - 1; i >= 0; i--) {
+    const task = schedule[i];
+    const duration = inMinutes(task.v.task.duration);
+
+    const end = cursor;
+    const start = end - duration;
+
+    task.start = fromMinutes(start);
+    task.end = fromMinutes(end);
+
+    cursor = start;
+  }
+
+  return schedule;
+}
+
 export function energyLoss(minutesFocused: number): number {
   const L = 20; // max loss
   const k = 0.05; // steepness
@@ -57,6 +94,10 @@ export function isSportActivity(activity: ActivityType): boolean {
     activity == ActivityType.INDOOR_SPORT ||
     activity == ActivityType.OUTDOOR_SPORT
   );
+}
+
+export function isTimeInIntervall(start: Time, end: Time, x: Time): boolean {
+  return inMinutes(start) <= inMinutes(x) && inMinutes(x) <= inMinutes(end);
 }
 
 export function sortScheudle(scheudle: Assignment[]): Assignment[] {

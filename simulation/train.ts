@@ -9,7 +9,11 @@ import {
   Timing,
 } from "../models/time.js";
 import { Action, ActionType } from "./action.js";
-import { unreachable } from "../util/utility.js";
+import {
+  getRandomArrayIndex,
+  getRandomInt,
+  unreachable,
+} from "../util/utility.js";
 import { Assignment } from "../csp/csp.js";
 import State from "./state.js";
 import StepResult from "./step.js";
@@ -24,49 +28,61 @@ export default async function trainModel() {
   const env = new Enviorment();
 
   await env.reset();
+
   let state = env.currentState;
+
+  state.time = 150;
+
   show(state.scheudle);
 
-  state.time = 200;
-
-  console.log("TEST", Timing.add(fromMinutes(state.time), DAY_START_TIME));
   let res = env.step({
-    action: ActionType.INSERT_BREAK,
-    id: state.scheudle[1].v.id,
+    action: ActionType.FOCUS_ON_TASK,
+    id: state.scheudle[3].v.id,
   });
 
   state = res.nextState;
 
+  console.log(Timing.add(DAY_START_TIME, fromMinutes(state.time)));
+
   console.log("--- AFTER ----");
 
   show(state.scheudle);
+
+  console.log(state);
 
   // for (let ep = 0; ep < EPISODES; ep++) {
   //   await env.reset();
   //   let state = env.currentState;
   //   let done = false;
   //   let reward = 0.0;
+  //   let firstRun = true;
 
-  //   let min = 0;
+  //   show(state.scheudle);
+
+  //   console.log("--- AFTER ----");
 
   //   while (!done) {
   //     const res: StepResult = env.step({
-  //       action: ActionType.DO_NOTHING,
-  //       id: "",
+  //       action: getRandomInt(0, ActionType.LENGTH - 1),
+  //       id: state.scheudle[getRandomArrayIndex(state.scheudle.length)].v.id,
   //     });
 
   //     reward = res.reward;
   //     done = res.done;
   //     state = res.nextState;
 
-  //     console.log(state);
-  //     min += 5;
+  //     if (firstRun) console.log(reward);
+
+  //     firstRun = false;
   //   }
 
-  //   console.log("next " + ep);
+  //   console.log(reward);
+
+  //   show(state.scheudle);
+
+  //   console.log(ep);
   // }
 }
-
 trainModel();
 
 // type StepBuffer = {
@@ -86,7 +102,7 @@ trainModel();
 //   let cum = 0;
 //   for (let i = 0; i < probs.length; i++) {
 //     cum += probs[i];
-//     if (r < cum) return i;
+//     if (r < cum) return i;currentMinuteFromStart
 //   }
 //   return probs.length - 1;
 // }
