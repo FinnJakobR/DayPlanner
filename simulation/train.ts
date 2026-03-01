@@ -1,16 +1,73 @@
-// import * as tf from "@tensorflow/tfjs-node";
-// import ActorCritic from "./neuronalNetwork/neuronalNetwork.js";
-// import Enviorment from "./enviorment.js";
-// import { stateToVector } from "./neuronalNetwork/preprocessing.js";
-// import { fromMinutes } from "../models/time.js";
-// import { Action, ActionType } from "./action.js";
-// import { unreachable } from "../util/utility.js";
-// import { Assignment } from "../csp/csp.js";
+import * as tf from "@tensorflow/tfjs-node";
+import ActorCritic from "./neuronalNetwork/neuronalNetwork.js";
+import Enviorment from "./enviorment.js";
+import { stateToVector } from "./neuronalNetwork/preprocessing.js";
+import {
+  DAY_START_TIME,
+  fromMinutes,
+  inMinutes,
+  Timing,
+} from "../models/time.js";
+import { Action, ActionType } from "./action.js";
+import { unreachable } from "../util/utility.js";
+import { Assignment } from "../csp/csp.js";
+import State from "./state.js";
+import StepResult from "./step.js";
+import { show } from "../util/debug.js";
 
 // const GAMMA = 0.99;
 // const CLIP_EPS = 0.2;
 // const LEARNING_RATE = 3e-2;
-// const EPISODES = 10000;
+const EPISODES = 10000;
+
+export default async function trainModel() {
+  const env = new Enviorment();
+
+  await env.reset();
+  let state = env.currentState;
+  show(state.scheudle);
+
+  state.time = 200;
+
+  console.log("TEST", Timing.add(fromMinutes(state.time), DAY_START_TIME));
+  let res = env.step({
+    action: ActionType.INSERT_BREAK,
+    id: state.scheudle[1].v.id,
+  });
+
+  state = res.nextState;
+
+  console.log("--- AFTER ----");
+
+  show(state.scheudle);
+
+  // for (let ep = 0; ep < EPISODES; ep++) {
+  //   await env.reset();
+  //   let state = env.currentState;
+  //   let done = false;
+  //   let reward = 0.0;
+
+  //   let min = 0;
+
+  //   while (!done) {
+  //     const res: StepResult = env.step({
+  //       action: ActionType.DO_NOTHING,
+  //       id: "",
+  //     });
+
+  //     reward = res.reward;
+  //     done = res.done;
+  //     state = res.nextState;
+
+  //     console.log(state);
+  //     min += 5;
+  //   }
+
+  //   console.log("next " + ep);
+  // }
+}
+
+trainModel();
 
 // type StepBuffer = {
 //   state: number[];

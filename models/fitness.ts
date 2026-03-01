@@ -2,7 +2,14 @@ import { writeFile } from "fs";
 import { Assignment } from "../csp/csp.js";
 import { getSunTime, TIME, zenith } from "../util/math.js";
 import { ActivityType } from "./task.js";
-import { DAY_START_TIME, Duration, inHours, isBefore, Timing } from "./time.js";
+import {
+  DAY_END_TIME,
+  DAY_START_TIME,
+  Duration,
+  inHours,
+  isBefore,
+  Timing,
+} from "./time.js";
 
 const pause_weight = 1.0;
 const gym_weight = 1.0;
@@ -25,6 +32,9 @@ export function getPauseTime(scheudle: Assignment[]) {
 
     pauses.push(Timing.diff(b, a));
   }
+
+  //last pause
+  pauses.push(Timing.diff(DAY_END_TIME, scheudle[scheudle.length - 1].end));
 
   return pauses;
 }

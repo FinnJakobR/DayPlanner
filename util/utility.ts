@@ -16,7 +16,7 @@ import {
 import State from "../simulation/state.js";
 
 export const MAX_TODOS = 100;
-export const STEP_IN_MIN = 5;
+export const STEP_IN_MIN = 2;
 
 export function energyLoss(minutesFocused: number): number {
   const L = 20; // max loss
@@ -28,16 +28,21 @@ export function energyLoss(minutesFocused: number): number {
 
 // find Task by Minute when in Task then !isPause when pause then index is the last task before the pause!
 export function findSlotByMinute(minute: number, scheudle: Assignment[]) {
-  const time = fromMinutes(minute);
+  const time = Timing.add(DAY_START_TIME, fromMinutes(minute));
 
-  let i = 0;
-  for (const a of scheudle) {
-    if (isTimeInTask(time, a)) return { index: i, isPause: false };
+  let i = scheudle.length - 1;
+
+  for (let x = 0; x < scheudle.length; x++) {
+    const a = scheudle[x];
+    if (isTimeInTask(time, a)) return { index: x, isPause: false };
   }
 
-  for (const a of scheudle) {
-    if (!isAfter(time, a.end)) break;
-    i++;
+  for (let z = 0; z < scheudle.length; z++) {
+    const a = scheudle[z];
+    if (!isAfter(time, a.end)) {
+      break;
+    }
+    i = z;
   }
 
   return { index: i, isPause: true };
@@ -118,6 +123,7 @@ export function cloneState(s: State): State {
   newState.energy = s.energy;
   newState.remaining_tasks = s.remaining_tasks;
   newState.stress = s.stress;
+  newState.time = s.time;
 
   newState.nextDeadlineInMinutes = s.nextDeadlineInMinutes;
 

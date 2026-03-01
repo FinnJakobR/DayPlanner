@@ -4,6 +4,7 @@ import plan_day from "../dayplanner.js";
 import Task, { ActivityType } from "../models/task.js";
 import {
   DAY_END_TIME,
+  DAY_START_TIME,
   Duration,
   fit,
   fromMinutes,
@@ -100,9 +101,12 @@ export default class Enviorment {
     let newState = this.applyAction(this.currentState, action);
     newState = this.simulate(newState);
     const reward = this.computeReward(this.currentState, newState, action);
-    const done = newState.remaining_tasks == 0; //this.checkDone(newState);
     this.currentState = newState;
     this.currentError = EnvironmentError.NONE;
+
+    const done =
+      inMinutes(Timing.add(fromMinutes(newState.time), DAY_START_TIME)) >=
+        inMinutes(DAY_END_TIME) && newState.delayInMinutes == 0;
 
     return { nextState: newState, reward, done };
   }
@@ -207,6 +211,7 @@ export default class Enviorment {
     return deadline;
   }
 
+  //sollte worken TODO wenn kein
   delayTask(id: string, state: State): State {
     const task = state.scheudle.find((e) => e.v.id == id);
 
@@ -220,18 +225,18 @@ export default class Enviorment {
 
     let fit = false;
 
-    for (let p = posOfTask; p < pauses.length; p++) {
+    for (let p = posOfTask + 1; p < pauses.length; p++) {
       const pause = pauses[p];
-      if (task!.v.task.duration <= pause) {
+      console.log(inMinutes(task!.v.task.duration) <= inMinutes(pause));
+      if (inMinutes(task!.v.task.duration) <= inMinutes(pause)) {
         fit = true;
         //setze den Tasks möglich mittig!
-
         const taskBeforePause = state.scheudle[p];
 
         const pauseInMinutes = inMinutes(pause);
         const taskDurationInMinutes = inMinutes(task!.v.task.duration);
 
-        const div = pauseInMinutes / taskDurationInMinutes;
+        const div = (pauseInMinutes - taskDurationInMinutes) / 2;
 
         const right = Math.floor(div);
 
@@ -239,63 +244,89 @@ export default class Enviorment {
 
         task!.start = newStart;
         task!.end = Timing.add(task!.start, task!.v.task.duration);
+
+        break;
       }
     }
 
-    if (!fit) this.currentError = EnvironmentError.COULD_NOT_DELAY_TASK;
+    //checke ob du es ganz nach hinten packen kannst
+    if (!fit) {
+      this.currentError = EnvironmentError.COULD_NOT_DELAY_TASK;
+    }
 
     return state;
   }
 
+  //den jetzigen Task nen 3 min Break machen
   insertBreak(id: string, state: State): State {
-    const task = state.scheudle.find((e) => e.v.id == id);
-
-    if (!task) unreachable("!task in InsertBreak()");
-
+    const scheudle = state.scheudle;
     const currentMinute = state.time;
-
-    const duration: Duration = new Duration({ hour: 0, minute: 3, second: 0 });
-
-    if (
-      inMinutes(Timing.diff(DAY_END_TIME, fromMinutes(currentMinute))) <
-      inMinutes(duration)
-    ) {
-      this.currentError = EnvironmentError.COULD_NOT_INSERT_GAP;
-      return state;
-    }
-
-    const remainingTaskDuration = Timing.diff(
-      task!.end,
+    const currentTimeFromStart = Timing.add(
+      DAY_START_TIME,
       fromMinutes(currentMinute),
     );
+    const duration: Duration = new Duration({ hour: 0, minute: 3, second: 0 });
 
-    if (
-      inMinutes(Timing.add(fromMinutes(currentMinute), duration)) +
-        inMinutes(remainingTaskDuration) >
-      inMinutes(DAY_END_TIME)
-    ) {
+    const { index, isPause } = findSlotByMinute(currentMinute, scheudle);
+
+    const task = state.scheudle[index];
+
+    console.log(index, isPause);
+    const pauses = getPauseTime(scheudle);
+
+    let sumOfPauses = 0;
+
+    pauses.forEach((v, i) => {
+      if (i >= index) {
+        sumOfPauses += inMinutes(v);
+      }
+    });
+
+    //wenn keine pause da (freie zeit) wo ich nen gap hinzufügen kann
+    if (sumOfPauses < inMinutes(duration)) {
+      console.log("keine Pause!");
       this.currentError = EnvironmentError.COULD_NOT_INSERT_GAP;
       return state;
     }
 
-    task!.end = fromMinutes(currentMinute);
-    task!.v.task.duration = Timing.add(task!.start, fromMinutes(currentMinute));
+    if (isPause) {
+      console.log("pause");
+      return state;
+    }
+
+    const remainingDuration = Timing.diff(task!.end, currentTimeFromStart);
+    const oldEnd = currentTimeFromStart;
+    const oldDuration = Timing.diff(currentTimeFromStart, task!.start);
+    const newStart = Timing.add(currentTimeFromStart, duration); // hier gap hinzufügen
+    const newEnd = Timing.add(newStart, remainingDuration);
+
+    if (inMinutes(pauses[index]) < inMinutes(duration)) {
+      //verschiebe alles um 3 min
+      for (let x = index + 1; x < scheudle.length; x++) {
+        const a = scheudle[x];
+
+        a.end = Timing.add(a.end, duration);
+        a.start = Timing.add(a.start, duration);
+      }
+    }
+
+    task!.end = oldEnd;
+    task!.v.task.duration = oldDuration;
 
     const newTask = new Assignment(
       new CSPVertex(
         new Task({
           title: task!.v.task.title,
-          duration: Timing.diff(task!.end, fromMinutes(currentMinute)),
-          deadline: task!.v.task.deadline,
-          priority: task!.v.task.priority,
+          duration: remainingDuration,
           activity: task!.v.task.activity,
+          priority: task!.v.task.priority,
+          deadline: task!.v.task.deadline,
         }),
       ),
-      Timing.add(fromMinutes(currentMinute), fromMinutes(1)),
+      newStart,
     );
 
-    newTask.end = Timing.add(newTask.start, newTask.v.task.duration);
-
+    newTask.end = newEnd;
     state.scheudle.push(newTask);
 
     return state;
@@ -509,17 +540,27 @@ export default class Enviorment {
         unreachable("in applyAction()");
     }
 
-    state.scheudle = sortScheudle(state.scheudle);
+    newState.scheudle = sortScheudle(newState.scheudle);
 
     return newState;
   }
 
   simulate(state: State): State {
-    if (
-      isAfter(state.scheudle[state.current_task].end, fromMinutes(state.time))
-    ) {
+    state = cloneState(state);
+    //schreibe das um für pausen!
+    const pauses = getPauseTime(state.scheudle);
+
+    const end = state.isPause
+      ? Timing.add(
+          state.scheudle[state.current_task].end,
+          pauses[state.current_task],
+        )
+      : state.scheudle[state.current_task].end;
+
+    if (isAfter(fromMinutes(state.time), end)) {
       //jetzt overrun
-      state.delayInMinutes -= Math.max(0, STEP_IN_MIN);
+
+      state.delayInMinutes = Math.max(0, state.delayInMinutes - STEP_IN_MIN);
     }
 
     state.time += STEP_IN_MIN;
@@ -617,18 +658,12 @@ export default class Enviorment {
 
     state.stress = Math.max(0, Math.min(100, state.stress));
 
-    if (
-      isAfter(
-        state.scheudle[state.current_task].end,
-        fromMinutes(state.time),
-      ) &&
-      state.delayInMinutes == 0
-    ) {
+    if (isAfter(fromMinutes(state.time), end) && state.delayInMinutes == 0) {
       const { index, isPause } = findSlotByMinute(state.time, state.scheudle);
 
       state.current_task = index;
       state.isPause = isPause;
-      state.remaining_tasks = state.scheudle.length - state.current_task;
+      state.remaining_tasks = state.scheudle.length - 1 - state.current_task;
 
       let mu = 0.1;
 
