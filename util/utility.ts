@@ -1,10 +1,12 @@
 import { Assignment, CSP } from "../csp/csp.js";
 import { CSPVertex } from "../csp/structs.js";
+import { getPauseTime } from "../models/fitness.js";
 import Genom, { TaskPriority } from "../models/genom.js";
 import Task, { ActivityType } from "../models/task.js";
 import {
   DAY_END_TIME,
   DAY_START_TIME,
+  Duration,
   fromMinutes,
   inMinutes,
   inSeconds,
@@ -20,6 +22,11 @@ export const STEP_IN_MIN = 2;
 
 export const MIN_BLOCK_LENGTH_IN_MIN = 5;
 
+export function timeOverflow(message: string) {
+  throw Error("[TIME_OVERFLOW]: " + message);
+}
+
+//rescheudle und mache die gaps dazwischen maximal
 export function rescheudle(
   startTime: Time,
   state: State,
@@ -32,24 +39,25 @@ export function rescheudle(
   const availableTime = inMinutes(DAY_END_TIME) - inMinutes(startTime);
 
   if (totalDuration > availableTime) {
-    console.log("No feasible schedule!");
-    return schedule;
+    console.log("could not rescheudle!\n\n\n\n\n\n");
+    return [];
   }
 
-  // ===== Reverse Greedy Packing =====
-  let cursor = inMinutes(DAY_END_TIME);
+  const sumOfPauses = Timing.diff(
+    DAY_END_TIME,
+    Timing.add(fromMinutes(totalDuration), startTime),
+  );
 
-  for (let i = schedule.length - 1; i >= 0; i--) {
-    const task = schedule[i];
-    const duration = inMinutes(task.v.task.duration);
+  const gap = fromMinutes(Math.floor(inMinutes(sumOfPauses) / schedule.length));
+  let start = Timing.add(gap, startTime);
 
-    const end = cursor;
-    const start = end - duration;
+  for (let i = 0; i < schedule.length; i++) {
+    const a = schedule[i];
 
-    task.start = fromMinutes(start);
-    task.end = fromMinutes(end);
+    a.start = start;
+    a.end = Timing.add(a.start, a.v.task.duration);
 
-    cursor = start;
+    start = Timing.add(Timing.add(start, gap), a.v.task.duration);
   }
 
   return schedule;
@@ -190,6 +198,16 @@ export function cloneState(s: State): State {
 
 export function cappedDiff(a: number, b: number, alpha: number) {
   return Math.max(a - b, alpha);
+}
+
+export function getPausesDurationSum(pauses: Duration[]): Duration {
+  let sum = new Duration({ hour: 0, minute: 0, second: 0 });
+
+  for (const p of pauses) {
+    sum = Timing.add(sum, p);
+  }
+
+  return sum;
 }
 
 export function getDurationSum(tasks: Task[]): Time {

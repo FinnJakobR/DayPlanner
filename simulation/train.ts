@@ -12,12 +12,14 @@ import { Action, ActionType } from "./action.js";
 import {
   getRandomArrayIndex,
   getRandomInt,
+  getRandomTimeFromIntervall,
   unreachable,
 } from "../util/utility.js";
 import { Assignment } from "../csp/csp.js";
 import State from "./state.js";
 import StepResult from "./step.js";
 import { show } from "../util/debug.js";
+import { getRandomTimeInTask } from "../tests/tests.js";
 
 // const GAMMA = 0.99;
 // const CLIP_EPS = 0.2;
@@ -26,62 +28,62 @@ const EPISODES = 10000;
 
 export default async function trainModel() {
   const env = new Enviorment();
+  //await env.reset();
 
-  await env.reset();
+  //let state = env.currentState;
 
-  let state = env.currentState;
+  //get a random time innerhalb eines Tasks
+  // state.time = getRandomTimeInTask(2, state.scheudle);
 
-  state.time = 150;
+  // show(state.scheudle);
 
-  show(state.scheudle);
+  // let res = env.step({
+  //   action: ActionType.INSERT_BREAK,
+  //   id: state.scheudle[2].v.id,
+  // });
 
-  let res = env.step({
-    action: ActionType.FOCUS_ON_TASK,
-    id: state.scheudle[3].v.id,
-  });
+  // state = res.nextState;
 
-  state = res.nextState;
+  // console.log(Timing.add(DAY_START_TIME, fromMinutes(state.time)));
 
-  console.log(Timing.add(DAY_START_TIME, fromMinutes(state.time)));
+  // console.log("--- AFTER ----");
 
-  console.log("--- AFTER ----");
+  // show(state.scheudle);
 
-  show(state.scheudle);
+  // console.log(state);
 
-  console.log(state);
+  for (let ep = 0; ep < EPISODES; ep++) {
+    await env.reset();
+    let state = env.currentState;
+    let done = false;
+    let reward = 0.0;
+    let firstRun = true;
 
-  // for (let ep = 0; ep < EPISODES; ep++) {
-  //   await env.reset();
-  //   let state = env.currentState;
-  //   let done = false;
-  //   let reward = 0.0;
-  //   let firstRun = true;
+    show(state.scheudle);
 
-  //   show(state.scheudle);
+    console.log("--- AFTER ----");
 
-  //   console.log("--- AFTER ----");
+    while (!done) {
+      const res: StepResult = env.step({
+        action: getRandomInt(0, ActionType.LENGTH - 1),
+        id: state.scheudle[getRandomArrayIndex(state.scheudle.length)].v.id,
+      });
 
-  //   while (!done) {
-  //     const res: StepResult = env.step({
-  //       action: getRandomInt(0, ActionType.LENGTH - 1),
-  //       id: state.scheudle[getRandomArrayIndex(state.scheudle.length)].v.id,
-  //     });
+      reward = res.reward;
+      done = res.done;
+      state = res.nextState;
 
-  //     reward = res.reward;
-  //     done = res.done;
-  //     state = res.nextState;
+      if (firstRun) console.log(reward);
 
-  //     if (firstRun) console.log(reward);
+      firstRun = false;
+    }
 
-  //     firstRun = false;
-  //   }
+    console.log(reward);
 
-  //   console.log(reward);
+    show(state.scheudle);
 
-  //   show(state.scheudle);
-
-  //   console.log(ep);
-  // }
+    console.log(ep);
+  }
 }
 trainModel();
 

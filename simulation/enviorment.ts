@@ -26,6 +26,7 @@ import {
   isTimeInIntervall,
   isTimeInTask,
   MIN_BLOCK_LENGTH_IN_MIN,
+  rescheudle,
   sortScheudle,
   STEP_IN_MIN,
   unreachable,
@@ -56,6 +57,7 @@ enum EnvironmentError {
   COULD_NOT_PULL_TASK_EARLIER,
   COULD_NOT_SPLIT_TASK,
   BLOCK_TO_SMALL,
+  COULD_NOT_RESCHEUDLE,
   NONE,
 }
 
@@ -173,7 +175,7 @@ export default class Enviorment {
     }
 
     if (this.currentError != EnvironmentError.NONE) {
-      reward -= 15;
+      reward -= 13;
     }
 
     // ===== 6️⃣ Delay bestrafen =====
@@ -300,6 +302,8 @@ export default class Enviorment {
   //den jetzigen Task nen 3 min Break machen
   insertBreak(id: string, state: State): State {
     const scheudle = state.scheudle;
+    const savedState = cloneState(state);
+
     const currentMinute = state.time;
     const currentTimeFromStart = Timing.add(
       DAY_START_TIME,
@@ -347,16 +351,6 @@ export default class Enviorment {
     const newStart = Timing.add(currentTimeFromStart, duration); // hier gap hinzufügen
     const newEnd = Timing.add(newStart, remainingDuration);
 
-    if (inMinutes(pauses[index]) < inMinutes(duration)) {
-      //verschiebe alles um 3 min
-      for (let x = index + 1; x < scheudle.length; x++) {
-        const a = scheudle[x];
-
-        a.end = Timing.add(a.end, duration);
-        a.start = Timing.add(a.start, duration);
-      }
-    }
-
     task!.end = oldEnd;
     task!.v.task.duration = oldDuration;
 
@@ -375,6 +369,33 @@ export default class Enviorment {
 
     newTask.end = newEnd;
     state.scheudle.push(newTask);
+    state.scheudle = sortScheudle(state.scheudle);
+
+    if (inMinutes(pauses[index]) < inMinutes(duration)) {
+      //verschiebe alles um 3 min
+
+      const newIndex = state.scheudle.findIndex((e) => e.v.id == newTask.v.id);
+      const newStart = Timing.add(newTask.end, duration);
+
+      const rescheudleSection = state.scheudle.splice(newIndex + 1);
+
+      try {
+        const rescheudlePlanSection = rescheudle(
+          newStart,
+          state,
+          rescheudleSection,
+        );
+
+        if (rescheudlePlanSection.length == 0) {
+          this.currentError = EnvironmentError.COULD_NOT_RESCHEUDLE;
+          return savedState;
+        }
+
+        state.scheudle = state.scheudle.concat(rescheudlePlanSection);
+      } catch (error) {
+        console.log(error);
+      }
+    }
 
     return state;
   }
@@ -384,165 +405,88 @@ export default class Enviorment {
   //wenn gerade ein Task läuft splitte ihn und packe ihn an die focussedTask stelle!
 
   focusOnTask(id: string, state: State): State {
-    const task = state.scheudle.find((e) => e.v.task.id == id);
-    const scheudle = state.scheudle;
-    if (!task) unreachable("!task in focusOnTask()");
+    const savedState = cloneState(state);
 
-    const currentMinute = state.time;
-    const currentMinuteFromStart = Timing.add(
-      fromMinutes(currentMinute),
-      DAY_START_TIME,
+    let schedule = sortScheudle(state.scheudle);
+
+    const taskIndex = schedule.findIndex((e) => e.v.task.id === id);
+    if (taskIndex === -1) return savedState;
+
+    const task = schedule[taskIndex];
+
+    const now = Timing.add(fromMinutes(state.time), DAY_START_TIME);
+
+    const { index: runningIndex, isPause } = findSlotByMinute(
+      state.time,
+      schedule,
     );
 
-    const duration = task!.v.task.duration;
-    const taskStart = task!.start;
+    const isRunningTask = runningIndex === taskIndex && !isPause;
+    const isAlreadyRunned = isBefore(task.end, now);
+    const isOnlyOneTask = schedule.length <= 1;
 
-    const { index, isPause } = findSlotByMinute(currentMinute, scheudle);
-    const pauses = getPauseTime(scheudle);
-    const indexOfTask = scheudle.findIndex((e) => e.v.id == id);
-
-    const isRunningTask = indexOfTask == index && !isPause;
-    const isAllreadyRunned = isBefore(task!.end, currentMinuteFromStart);
-
-    if (isRunningTask) {
-      //wenn der task der schon läuft der der focus sein soll dann mache einfach nichts
+    if (isRunningTask || isAlreadyRunned || isOnlyOneTask) {
       this.currentError = EnvironmentError.COULD_NOT_FOCUS_TASK;
-      console.log("CURRENTLY_RUNNING");
-      return state;
+      return savedState;
     }
 
-    if (isAllreadyRunned) {
-      //wenn ich eine idee bekomme die schon gerunnt ist dann mache nichts!
-      this.currentError = EnvironmentError.COULD_NOT_FOCUS_TASK;
-      console.log("ALLREADY_RUNNED!");
-      return state;
-    }
+    if (!isPause && runningIndex >= 0) {
+      const runningTask = schedule[runningIndex];
 
-    if (isPause) {
-      const isLongerThanPause =
-        inMinutes(duration) >
-        inMinutes(
-          Timing.diff(
-            currentMinuteFromStart,
-            Timing.add(state.scheudle[index].end, pauses[index]),
+      if (isAfter(runningTask.end, now)) {
+        const remaining = Timing.diff(runningTask.end, now);
+
+        if (inMinutes(remaining) < MIN_BLOCK_LENGTH_IN_MIN) {
+          this.currentError = EnvironmentError.BLOCK_TO_SMALL;
+          return savedState;
+        }
+
+        // ersten Teil kürzen
+        runningTask.end = now;
+        runningTask.v.task.duration = Timing.diff(now, runningTask.start);
+
+        // Rest-Block erzeugen
+        const splitTask = new Assignment(
+          new CSPVertex(
+            new Task({
+              title: runningTask.v.task.title,
+              duration: remaining,
+              activity: runningTask.v.task.activity,
+              priority: runningTask.v.task.priority,
+              deadline: runningTask.v.task.deadline,
+            }),
           ),
+          now,
         );
 
-      task!.start = currentMinuteFromStart;
-      task!.end = Timing.add(task!.start, duration);
+        splitTask.end = Timing.add(now, remaining);
 
-      if (isLongerThanPause) {
-        const diff = Timing.diff(
-          duration,
-          Timing.diff(
-            currentMinuteFromStart,
-            Timing.add(state.scheudle[index].end, pauses[index]),
-          ),
-        );
-
-        //packe alle tasks dahinter
-        scheudle
-          .filter(
-            (e) =>
-              isAfter(e.start, taskStart) &&
-              inMinutes(e.start) != inMinutes(taskStart),
-          )
-          .forEach((e) => {
-            e.start = Timing.add(e.start, diff);
-            e.end = Timing.add(e.end, diff);
-          });
+        schedule.splice(runningIndex + 1, 0, splitTask);
       }
-    } else {
-      console.log("NO PAUSE!");
-
-      const runningTask = scheudle[index];
-      const remainingDuration = Timing.diff(
-        runningTask.end,
-        currentMinuteFromStart,
-      );
-
-      if (inMinutes(remainingDuration) < MIN_BLOCK_LENGTH_IN_MIN) {
-        this.currentError = EnvironmentError.BLOCK_TO_SMALL;
-        console.log("TOO SMALL");
-
-        return state;
-      }
-
-      const fitInRunningTask =
-        inMinutes(duration) <
-        inMinutes(Timing.add(remainingDuration, pauses[index]));
-
-      //5h -> 1h -> 4h du musst pausen verkleinern! weil wenn nicht dann kommen wir über 24
-      if (!fitInRunningTask) {
-        //das soll die diff von duration und remaining duration + pauses[index] sein
-        const diff = Timing.diff(
-          duration, //duration von dem task den man verschieben will!
-          Timing.add(remainingDuration, pauses[index]),
-        );
-
-        scheudle
-          .filter(
-            (e) =>
-              isAfter(e.start, runningTask.start) &&
-              inMinutes(e.start) != inMinutes(runningTask.start),
-          )
-          .forEach((e) => {
-            e.start = Timing.add(e.start, diff);
-            e.end = Timing.add(e.end, diff);
-          });
-      }
-
-      //setze den neuen Task
-      const oldStart = task!.start;
-      task!.start = currentMinuteFromStart;
-      task!.end = Timing.add(currentMinuteFromStart, task!.v.task.duration);
-
-      //splitte den alten
-      const oldEnd = currentMinuteFromStart;
-      const oldDuration = Timing.diff(currentMinuteFromStart, task!.start);
-      const oldRunningDuration = Timing.diff(
-        currentMinuteFromStart,
-        runningTask.start,
-      );
-      const newDuration = remainingDuration;
-      const fitInFocusedTask = inMinutes(duration) >= inMinutes(newDuration); //wenn der getfocued task so viel platz hat wie die neue Dur packe es dahin
-      const newStart = oldStart;
-      const newEnd = Timing.add(newStart, remainingDuration);
-
-      if (!fitInFocusedTask) {
-        //wenn es nicht fitted dann verschiebe alles nachhinten die diff länge!
-        const diff = Timing.diff(newDuration, oldDuration);
-        scheudle
-          .filter(
-            (e) =>
-              isAfter(e.start, oldStart) &&
-              inMinutes(e.start) != inMinutes(oldStart),
-          )
-          .forEach((e) => {
-            e.start = Timing.add(e.start, diff);
-            e.end = Timing.add(e.end, diff);
-          });
-      }
-
-      runningTask.end = oldEnd;
-      runningTask.v.task.duration = oldRunningDuration;
-
-      const newTask = new Assignment(
-        new CSPVertex(
-          new Task({
-            title: runningTask.v.task.title,
-            duration: remainingDuration,
-            activity: runningTask.v.task.activity,
-            priority: runningTask.v.task.priority,
-            deadline: runningTask.v.task.deadline,
-          }),
-        ),
-        newStart,
-      );
-
-      newTask.end = newEnd;
-      state.scheudle.push(newTask);
     }
+
+    const updatedTaskIndex = schedule.findIndex((e) => e.v.task.id === id);
+
+    const focusTask = schedule.splice(updatedTaskIndex, 1)[0];
+
+    const insertIndex = runningIndex >= 0 ? runningIndex + 1 : 0;
+
+    focusTask.start = now;
+    focusTask.end = Timing.add(now, focusTask.v.task.duration);
+
+    schedule.splice(insertIndex, 0, focusTask);
+
+    const head = schedule.slice(0, insertIndex + 1);
+    const tail = schedule.slice(insertIndex + 1);
+
+    const rebuiltTail = rescheudle(focusTask.end, state, tail);
+
+    if (!rebuiltTail || (rebuiltTail.length === 0 && tail.length > 0)) {
+      this.currentError = EnvironmentError.COULD_NOT_RESCHEUDLE;
+      return savedState;
+    }
+
+    state.scheudle = [...head, ...rebuiltTail];
 
     return state;
   }
@@ -764,12 +708,31 @@ export default class Enviorment {
 
     //TEST
 
+    //check for time overlow
     const faultTask = newState.scheudle.find((e) => e.start.hour > 24);
 
     if (faultTask) {
       console.log(state, faultTask);
 
-      unreachable("das sollte nicht möglich sein");
+      unreachable("Task sind einfach nach 0 Uhr!");
+    }
+
+    //check ob es weniger task als vorher sind!
+    if (state.scheudle.length > newState.scheudle.length) {
+      console.log(state.scheudle);
+      console.log(newState.scheudle);
+
+      unreachable(
+        "task sind verschwunden WTF! " +
+          state.scheudle.length +
+          ">" +
+          newState.scheudle.length,
+      );
+    }
+
+    //check ob es overlapp gibt
+    if (this.hasOverlapp(newState.scheudle)) {
+      unreachable("task hat overflow!");
     }
 
     return newState;

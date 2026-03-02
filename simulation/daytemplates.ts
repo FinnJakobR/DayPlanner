@@ -1,7 +1,15 @@
 import Task, { ActivityType } from "../models/task.js";
-import { Duration, inHours, Time } from "../models/time.js";
+import {
+  DAY_END_TIME,
+  DAY_START_TIME,
+  Duration,
+  inHours,
+  inMinutes,
+  Time,
+} from "../models/time.js";
 import { FAKE_TASKS } from "../tests/fakeTasks.js";
 import {
+  getDurationSum,
   getRandomArrayIndex,
   getRandomInt,
   getRandomTimeFromIntervall,
@@ -35,38 +43,55 @@ export class DayTemplate {
 
     return acts;
   }
+  generate(minTasks: number = 4): Task[] {
+    const maxAttempts = 50;
 
-  generate(): Task[] {
-    const acts = this.generateRandomActivities();
-    const tasks: Task[] = [];
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const acts = this.generateRandomActivities();
+      const tasks: Task[] = [];
 
-    for (const act of acts) {
-      const randomTitle = FAKE_TASKS[getRandomArrayIndex(FAKE_TASKS.length)];
-      const randomDuration = getRandomTimeFromIntervall(
-        this.activities[act].minDuration,
-        this.activities[act].maxDuration,
-      );
+      for (const act of acts) {
+        const randomTitle = FAKE_TASKS[getRandomArrayIndex(FAKE_TASKS.length)];
 
-      const deadline = new Time({
-        hour: Infinity,
-        minute: Infinity,
-        second: Infinity,
-      });
+        const randomDuration = getRandomTimeFromIntervall(
+          this.activities[act].minDuration,
+          this.activities[act].maxDuration,
+        );
 
-      const randomPriority = getRandomInt(0, 10);
+        const deadline = new Time({
+          hour: Infinity,
+          minute: Infinity,
+          second: Infinity,
+        });
 
-      tasks.push(
-        new Task({
-          title: randomTitle,
-          deadline: deadline,
-          priority: randomPriority,
-          activity: act,
-          duration: randomDuration,
-        }),
-      );
+        const randomPriority = getRandomInt(0, 10);
+
+        tasks.push(
+          new Task({
+            title: randomTitle,
+            deadline,
+            priority: randomPriority,
+            activity: act,
+            duration: randomDuration,
+          }),
+        );
+      }
+
+      // 🔥 VALIDATION
+
+      if (tasks.length < minTasks) continue;
+
+      const totalDuration = inMinutes(getDurationSum(tasks));
+
+      const availableMinutes =
+        inMinutes(DAY_END_TIME) - inMinutes(DAY_START_TIME);
+
+      if (totalDuration > availableMinutes) continue;
+
+      return tasks;
     }
 
-    return tasks;
+    throw new Error("Could not generate valid day plan.");
   }
 }
 
@@ -87,7 +112,7 @@ export class NormalWeekDayTemplate extends DayTemplate {
     };
 
     this.activities[ActivityType.DEEP_WORK] = {
-      num: 0,
+      num: 2,
       minDuration: new Duration({ hour: 1, minute: 0, second: 0 }),
       maxDuration: new Duration({ hour: 2, minute: 0, second: 0 }),
     };
@@ -105,7 +130,7 @@ export class NormalWeekDayTemplate extends DayTemplate {
     };
 
     this.activities[ActivityType.DRIVING] = {
-      num: 0,
+      num: 1,
       minDuration: new Duration({ hour: 0, minute: 20, second: 0 }),
       maxDuration: new Duration({ hour: 0, minute: 50, second: 0 }),
     };
@@ -135,13 +160,13 @@ export class SemesterHolidayTemplate extends DayTemplate {
     };
 
     this.activities[ActivityType.MENTAL_HEALTH] = {
-      num: 1,
+      num: 2,
       minDuration: new Duration({ hour: 0, minute: 20, second: 0 }),
       maxDuration: new Duration({ hour: 2, minute: 0, second: 0 }),
     };
 
     this.activities[ActivityType.HOUSEHOLD] = {
-      num: 1,
+      num: 2,
       minDuration: new Duration({ hour: 0, minute: 10, second: 0 }),
       maxDuration: new Duration({ hour: 0, minute: 35, second: 0 }),
     };
@@ -165,13 +190,13 @@ export class DeepFocusDayTemplate extends DayTemplate {
     };
 
     this.activities[ActivityType.INDOOR_SPORT] = {
-      num: 0,
+      num: 1,
       minDuration: new Duration({ hour: 1, minute: 30, second: 0 }),
       maxDuration: new Duration({ hour: 2, minute: 30, second: 0 }),
     };
 
     this.activities[ActivityType.DEEP_WORK] = {
-      num: 1,
+      num: 2,
       minDuration: new Duration({ hour: 1, minute: 0, second: 0 }),
       maxDuration: new Duration({ hour: 2, minute: 30, second: 0 }),
     };
