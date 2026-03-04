@@ -8,10 +8,9 @@ import { elitism, tournamentSelection } from "./models/selection.js";
 import Task, { ActivityType } from "./models/task.js";
 import { inSeconds, Time, Timing } from "./models/time.js";
 import { generateFakeTasks } from "./tests/fakeTasks.js";
-import { cloneGenom, decodeGenom } from "./util/utility.js";
+import { cloneGenom, decodeGenom, getRandomInt } from "./util/utility.js";
 
 const POPULATION = 70;
-const KONVERGENZE_LIMIT = 45;
 
 function createPopulation(tasks: Task[]): Genom[] {
   const genoms: Genom[] = [];
@@ -25,6 +24,8 @@ function createPopulation(tasks: Task[]): Genom[] {
 
 const plan_day = async (t: Task[]): Promise<Assignment[]> => {
   let nth_generation = 0;
+
+  const KONVERGENZE_LIMIT = 45; //getRandomInt(10, 20);
 
   const tasks = t;
 

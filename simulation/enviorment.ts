@@ -68,6 +68,16 @@ export default class Enviorment {
 
   constructor() {}
 
+  resetWithFixedTasks(tasks: Assignment[]) {
+    this.currentState = new State();
+    this.currentError = EnvironmentError.NONE;
+
+    this.currentState.scheudle = tasks;
+    this.currentState.remaining_tasks = this.currentState.scheudle.length;
+
+    this.isStarted = true;
+  }
+
   generateTasks(): Task[] {
     const templates = [
       new NormalWeekDayTemplate(),
@@ -118,8 +128,7 @@ export default class Enviorment {
 
     const done =
       inMinutes(Timing.add(fromMinutes(newState.time), DAY_START_TIME)) >=
-        inMinutes(newState.scheudle[newState.scheudle.length - 1].end) &&
-      newState.delayInMinutes == 0;
+      inMinutes(newState.scheudle[newState.scheudle.length - 1].end);
 
     return { nextState: newState, reward, done };
   }
@@ -166,16 +175,16 @@ export default class Enviorment {
 
     // ===== 4️⃣ Deadline-Verstoß stark bestrafen =====
     if (this.afterDeadline(next.scheudle)) {
-      reward -= 25;
+      reward -= 10;
     }
 
     // ===== 5️⃣ Overlap bestrafen =====
     if (this.hasOverlapp(next.scheudle)) {
-      reward -= 10;
+      reward -= 5;
     }
 
     if (this.currentError != EnvironmentError.NONE) {
-      reward -= 13;
+      reward -= 5;
     }
 
     // ===== 6️⃣ Delay bestrafen =====
@@ -184,7 +193,7 @@ export default class Enviorment {
     // ===== 7️⃣ Kleine Step-Kosten (Anti-Idle) =====
     reward -= 0.01;
 
-    return Math.max(-50, Math.min(50, reward));
+    return reward;
   }
 
   nextTask(state: State) {

@@ -1,8 +1,11 @@
 import * as tf from "@tensorflow/tfjs-node";
-import ActorCritic from "./neuronalNetwork/neuronalNetwork.js";
 import Enviorment from "./enviorment.js";
-import { stateToVector } from "./neuronalNetwork/preprocessing.js";
 import {
+  actionToVector,
+  stateToVector,
+} from "./neuronalNetwork/preprocessing.js";
+import {
+  DAY_END_TIME,
   DAY_START_TIME,
   fromMinutes,
   inMinutes,
@@ -13,6 +16,7 @@ import {
   getRandomArrayIndex,
   getRandomInt,
   getRandomTimeFromIntervall,
+  MAX_TODOS,
   unreachable,
 } from "../util/utility.js";
 import { Assignment } from "../csp/csp.js";
@@ -21,6 +25,11 @@ import StepResult from "./step.js";
 import { show } from "../util/debug.js";
 import { getRandomTimeInTask } from "../tests/tests.js";
 
+import Agent from "./agent.js";
+import { ActivityType } from "../models/task.js";
+import { appendFileSync, fsync, writeFileSync } from "fs";
+import plan_day from "../dayplanner.js";
+
 // const GAMMA = 0.99;
 // const CLIP_EPS = 0.2;
 // const LEARNING_RATE = 3e-2;
@@ -28,255 +37,81 @@ const EPISODES = 10000;
 
 export default async function trainModel() {
   const env = new Enviorment();
-  //await env.reset();
+  const N = 20;
+  const input_dim = 5 + MAX_TODOS * 7;
 
-  //let state = env.currentState;
+  const generatedTask = await plan_day(env.generateTasks());
 
-  //get a random time innerhalb eines Tasks
-  // state.time = getRandomTimeInTask(2, state.scheudle);
+  const agent = new Agent(ActivityType.LENGTH - 1, input_dim, "");
 
-  // show(state.scheudle);
+  let best_score = 0.0;
+  let learn_iters = 0;
+  let n_steps = 0;
+  let score_history = [];
+  let avg_score = 0;
 
-  // let res = env.step({
-  //   action: ActionType.INSERT_BREAK,
-  //   id: state.scheudle[2].v.id,
-  // });
-
-  // state = res.nextState;
-
-  // console.log(Timing.add(DAY_START_TIME, fromMinutes(state.time)));
-
-  // console.log("--- AFTER ----");
-
-  // show(state.scheudle);
-
-  // console.log(state);
+  writeFileSync("./score.txt", "");
 
   for (let ep = 0; ep < EPISODES; ep++) {
-    await env.reset();
+    await env.resetWithFixedTasks(generatedTask);
+    console.log(generatedTask.length);
     let state = env.currentState;
+
+    let encodedState = stateToVector(state);
+
     let done = false;
-    let reward = 0.0;
-    let firstRun = true;
-
-    show(state.scheudle);
-
-    console.log("--- AFTER ----");
+    let score = 0;
 
     while (!done) {
-      const res: StepResult = env.step({
-        action: getRandomInt(0, ActionType.LENGTH - 1),
-        id: state.scheudle[getRandomArrayIndex(state.scheudle.length)].v.id,
-      });
+      const { action, id, idlog_prob, log_prob, value } = agent.choose_action(
+        tf.tensor2d([encodedState]),
+        state.scheudle,
+      );
 
-      reward = res.reward;
-      done = res.done;
+      const decodedId = state.scheudle[id].v.id;
+      const res = env.step({ action: action, id: decodedId });
+      const encodedAction = actionToVector(
+        { action: action, id: decodedId },
+        state.scheudle,
+      );
+
+      n_steps += 1;
+      score += res.reward;
+      agent.store(
+        encodedState,
+        encodedAction[0],
+        idlog_prob + log_prob,
+        value,
+        res.reward,
+        id,
+        res.done,
+      );
+
+      if (n_steps % N == 0) {
+        await agent.learn(res.nextState.scheudle.length);
+        learn_iters += 1;
+      }
+
       state = res.nextState;
+      encodedState = stateToVector(state);
+      score_history.push(score);
+      avg_score = tf.mean(score_history.slice(-100)).dataSync()[0];
 
-      if (firstRun) console.log(reward);
+      if (avg_score > best_score) {
+        best_score = avg_score;
+        //save here
+      }
 
-      firstRun = false;
+      done = res.done;
     }
 
-    console.log(reward);
+    appendFileSync("./score.txt", `${avg_score}\n`, { encoding: "utf-8" });
 
-    show(state.scheudle);
-
-    console.log(ep);
+    console.log("epsiode", ep);
+    console.log("score", best_score);
+    console.log("avg score", avg_score);
+    console.log("time steps", n_steps);
+    console.log("learning_steps", learn_iters);
   }
 }
 trainModel();
-
-// type StepBuffer = {
-//   state: number[];
-//   taskIndex: number;
-//   timeIndex: number;
-//   durationIndex: number;
-//   reward: number;
-//   value: number;
-//   logProb: number;
-//   advantage: number;
-//   return: number;
-// };
-
-// function sampleFromProbs(probs: number[]): number {
-//   const r = Math.random();
-//   let cum = 0;
-//   for (let i = 0; i < probs.length; i++) {
-//     cum += probs[i];
-//     if (r < cum) return i;currentMinuteFromStart
-//   }
-//   return probs.length - 1;
-// }
-
-// function decodeAction(
-//   index: number,
-//   id: number,
-//   duration: number,
-//   time: number,
-//   scheudle: Assignment[],
-// ): Action {
-//   switch (index) {
-//     case ActionType.RESCHEUDLE_TASK:
-//       return {
-//         type: ActionType.RESCHEUDLE_TASK,
-//         taskId: id < scheudle.length ? scheudle[id].v.id : "",
-//         time: fromMinutes(time),
-//       };
-//     case ActionType.CHANGE_DURATION:
-//       return {
-//         type: ActionType.CHANGE_DURATION,
-//         taskId: id < scheudle.length ? scheudle[id].v.id : "",
-//         duration: fromMinutes(duration),
-//       };
-//     case ActionType.SPLIT_TASK:
-//       return {
-//         type: ActionType.SPLIT_TASK,
-//         taskId: id < scheudle.length ? scheudle[id].v.id : "",
-//         time: fromMinutes(time),
-//         duration: fromMinutes(duration),
-//       };
-//     default:
-//       unreachable();
-//   }
-//   throw Error("unreachable!");
-// }
-
-// function maskTaskProbs(taskLogits: tf.Tensor, numTasks: number) {
-//   const x = taskLogits.shape[1];
-//   return tf.tidy(() => {
-//     const mask = tf.tensor1d(
-//       Array.from({ length: x! }, (_, i) => (i < numTasks ? 0 : -1e9)),
-//     );
-//     return taskLogits.add(mask);
-//   });
-// }
-
-// export default async function trainModel() {
-//   const env = new Enviorment();
-//   const agent = new ActorCritic(606, 3); // Multi-head version!
-//   const optimizer = tf.train.adam(LEARNING_RATE);
-
-//   for (let ep = 0; ep < EPISODES; ep++) {
-//     await env.reset();
-//     let state = env.currentState;
-//     let done = false;
-
-//     const buffer: StepBuffer[] = [];
-
-//     // ===== ROLLOUT =====
-//     while (!done) {
-//       const stateVec = tf.tensor2d([stateToVector(state)]);
-
-//       const { action, task, time, duration, value } = agent.forward(stateVec);
-
-//       const masked = maskTaskProbs(task, state.scheudle.length);
-
-//       const taskProbs = masked.softmax().dataSync();
-
-//       const timeProbs = time.dataSync();
-//       const durationProbs = duration.dataSync();
-//       const actionProbs = action.dataSync();
-
-//       const taskIndex = sampleFromProbs(Array.from(taskProbs));
-//       const timeIndex = sampleFromProbs(Array.from(timeProbs));
-//       const durationIndex = sampleFromProbs(Array.from(durationProbs));
-//       const actionType = sampleFromProbs(Array.from(actionProbs));
-
-//       const logProb =
-//         Math.log(taskProbs[taskIndex] + 1e-8) +
-//         Math.log(timeProbs[timeIndex] + 1e-8) +
-//         Math.log(durationProbs[durationIndex] + 1e-8);
-
-//       const a = decodeAction(
-//         actionType,
-//         taskIndex,
-//         timeIndex,
-//         durationIndex,
-//         state.scheudle,
-//       );
-
-//       const { nextState, reward, done: doneFlag } = env.step(a);
-
-//       buffer.push({
-//         state: stateToVector(state),
-//         taskIndex,
-//         timeIndex,
-//         durationIndex,
-//         reward,
-//         value: value.dataSync()[0],
-//         logProb,
-//         advantage: 0,
-//         return: 0,
-//       });
-
-//       state = nextState;
-//       done = doneFlag;
-
-//       stateVec.dispose();
-//       task.dispose();
-//       time.dispose();
-//       duration.dispose();
-//       value.dispose();
-//     }
-
-//     // ===== ADVANTAGE + RETURNS =====
-//     let G = 0;
-//     for (let t = buffer.length - 1; t >= 0; t--) {
-//       G = buffer[t].reward + GAMMA * G;
-//       buffer[t].return = G;
-//       buffer[t].advantage = G - buffer[t].value;
-//     }
-
-//     // ===== PPO UPDATE =====
-//     optimizer.minimize(() => {
-//       const policyLosses: tf.Tensor[] = [];
-//       const valueLosses: tf.Tensor[] = [];
-
-//       for (const b of buffer) {
-//         const stateTensor = tf.tensor2d([b.state]);
-//         const { task, time, duration, value } = agent.forward(stateTensor);
-
-//         const taskProb = task.squeeze().gather(b.taskIndex);
-//         const timeProb = time.squeeze().gather(b.timeIndex);
-//         const durationProb = duration.squeeze().gather(b.durationIndex);
-
-//         const newLogProb = taskProb
-//           .log()
-//           .add(timeProb.log())
-//           .add(durationProb.log());
-
-//         const ratio = newLogProb.sub(tf.scalar(b.logProb)).exp();
-
-//         const adv = tf.scalar(b.advantage);
-
-//         const clipped = tf.clipByValue(ratio, 1 - CLIP_EPS, 1 + CLIP_EPS);
-
-//         const policyLoss = tf.minimum(ratio.mul(adv), clipped.mul(adv)).mul(-1);
-
-//         const valueLoss = tf.losses.meanSquaredError(
-//           tf.scalar(b.return),
-//           value.squeeze(),
-//         );
-
-//         policyLosses.push(policyLoss);
-//         valueLosses.push(valueLoss);
-
-//         console.log("P", policyLoss.dataSync());
-
-//         stateTensor.dispose();
-//       }
-
-//       return tf.add(
-//         tf.stack(policyLosses).mean(),
-//         tf.stack(valueLosses).mean(),
-//       );
-//     });
-
-//     if (ep % 10 === 0) {
-//       console.log(`Episode ${ep} done`);
-//     }
-//   }
-// }
-
-// trainModel();

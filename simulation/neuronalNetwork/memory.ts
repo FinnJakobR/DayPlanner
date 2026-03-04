@@ -24,9 +24,10 @@ export default class Memory {
   private states: number[][] = [];
   private probabilities: number[] = [];
   private critic_values: number[] = [];
-  private actions: number[][] = [];
+  private actions: number[] = [];
   private rewards: number[] = [];
   private dones: boolean[] = [];
+  private ids: number[] = [];
 
   constructor(batch_size: number) {
     this.batch_size = batch_size;
@@ -35,8 +36,8 @@ export default class Memory {
   generate_batches() {
     const n_states = this.states.length;
     const batch_start = Array.from(
-      { length: n_states },
-      (e, i) => (i += this.batch_size),
+      { length: Math.ceil(n_states / this.batch_size) },
+      (_, i) => i * this.batch_size,
     );
 
     const indicies = Array.from({ length: n_states }, (e, i) => i);
@@ -55,16 +56,18 @@ export default class Memory {
       critic_values: this.critic_values,
       rewards: this.rewards,
       dones: this.dones,
+      ids: this.ids,
       batches: batches,
     };
   }
 
   store_memory(
     state: number[],
-    action: number[],
+    action: number,
     probabilities: number,
     critic_values: number,
     reward: number,
+    id: number,
     done: boolean,
   ) {
     this.states.push(state);
@@ -73,6 +76,7 @@ export default class Memory {
     this.critic_values.push(critic_values);
     this.rewards.push(reward);
     this.dones.push(done);
+    this.ids.push(id);
   }
 
   clear_memory() {

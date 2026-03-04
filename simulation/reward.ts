@@ -10,7 +10,7 @@ export function delayReward(
 
   const deltaDelay = next.delayInMinutes - prev.delayInMinutes;
 
-  reward -= deltaDelay * 2;
+  reward -= deltaDelay * 0.3;
 
   return reward;
 }

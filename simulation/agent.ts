@@ -2,8 +2,9 @@ import Memory from "./neuronalNetwork/memory.js";
 import { ActorNetwork, CriticNetwork } from "./neuronalNetwork/networks.js";
 import * as tf from "@tensorflow/tfjs-node";
 import State from "./state.js";
-import { Action } from "./action.js";
+import { Action, ActionType } from "./action.js";
 import { MAX_TODOS } from "../util/utility.js";
+import { Assignment } from "../csp/csp.js";
 
 export default class Agent {
   private actor: ActorNetwork;
@@ -11,11 +12,11 @@ export default class Agent {
   private critic_optimizer: tf.AdamOptimizer;
   private actor_optimizer: tf.AdamOptimizer;
   private gamma: number = 0.99;
-  private learning_rate: number = 0.0003;
+  private learning_rate: number = 1e-3;
   private policy_clip: number = 0.2;
-  private n_epochs: number = 10;
+  private n_epochs: number = 5;
   private gae_lambda: number = 0.95;
-  private batch_size: number = 64;
+  private batch_size: number = 20;
   private checkpoint_dir: string;
   private memory: Memory;
   private n_actions: number;
@@ -33,10 +34,11 @@ export default class Agent {
 
   store(
     state: number[],
-    action: number[],
+    action: number,
     probability: number,
     critic_value: number,
     reward: number,
+    id: number,
     done: boolean,
   ) {
     this.memory.store_memory(
@@ -45,6 +47,7 @@ export default class Agent {
       probability,
       critic_value,
       reward,
+      id,
       done,
     );
   }
@@ -66,14 +69,31 @@ export default class Agent {
     );
   }
 
-  choose_action(state: tf.Tensor2D) {
+  choose_action(state: tf.Tensor2D, scheudle: Assignment[]) {
     const logits = this.actor.forward(state);
+    const values = this.critic.forward(state) as tf.Tensor2D;
 
-    const actionLogits = logits[0].as1D();
-    const idLogits = logits[1].as1D();
+    const actionLogits = logits[0].as2D(1, 6);
+    const idLogits = logits[1];
 
-    const ids = tf.multinomial(idLogits, 1);
-    const idlogProbs = tf.logSoftmax(idLogits);
+    const validIds = Array.from({ length: scheudle.length }, (x, i) => i);
+
+    const idMask = tf.tensor1d(
+      Array.from({ length: MAX_TODOS }, (_, i) =>
+        validIds.includes(i) ? 1 : 0,
+      ),
+    );
+
+    // Logits maskieren: ungültige IDs auf -1e9 setzen
+    const maskedIdLogits = idLogits
+      .add(idMask.sub(1).mul(1e11))
+      .as2D(1, MAX_TODOS);
+
+    // Jetzt sampeln
+
+    const ids = tf.multinomial(maskedIdLogits, 1);
+
+    const idlogProbs = tf.logSoftmax(maskedIdLogits);
 
     const actions = tf.multinomial(actionLogits, 1);
     const ActionlogProbs = tf.logSoftmax(actionLogits);
@@ -87,8 +107,6 @@ export default class Agent {
       idlogProbs.mul(tf.oneHot(ids.squeeze(), MAX_TODOS)),
       1,
     );
-
-    const values = this.critic.forward(state) as tf.Tensor1D;
 
     const action = actions.dataSync()[0];
     const value = values.dataSync()[0];
@@ -105,92 +123,148 @@ export default class Agent {
     };
   }
 
-  async learn() {
+  async learn(todos: number) {
+    const {
+      states,
+      actions,
+      ids,
+      probabilities, // total log prob!
+      critic_values,
+      rewards,
+      dones,
+      batches,
+    } = this.memory.generate_batches();
+
+    // ---------- GAE ----------
+    const advantage = new Array(rewards.length).fill(0);
+    let gae = 0;
+
+    for (let t = rewards.length - 1; t >= 0; t--) {
+      const nextValue = t === rewards.length - 1 ? 0 : critic_values[t + 1];
+      const delta =
+        rewards[t] +
+        this.gamma * nextValue * (dones[t] ? 0 : 1) -
+        critic_values[t];
+
+      gae = delta + this.gamma * this.gae_lambda * (dones[t] ? 0 : 1) * gae;
+      advantage[t] = gae;
+    }
+
+    const returns = advantage.map((a, i) => a + critic_values[i]);
+
+    // ---------- PPO Training ----------
     for (let epoch = 0; epoch < this.n_epochs; epoch++) {
-      // 1️⃣ Batches aus dem Memory generieren
-      const {
-        states,
-        actions,
-        probabilities,
-        critic_values,
-        rewards,
-        dones,
-        batches,
-      } = this.memory.generate_batches();
-
-      const values = critic_values.slice(); // Kopie der Critic Values
-
-      // 2️⃣ Vorteil berechnen (GAE)
-      const advantage = new Array(rewards.length).fill(0);
-
-      for (let t = 0; t < rewards.length - 1; t++) {
-        let discount = 1;
-        let a_t = 0;
-        for (let k = t; k < rewards.length - 1; k++) {
-          a_t +=
-            discount *
-            (rewards[k] +
-              this.gamma * values[k + 1] * (dones[k] ? 0 : 1) -
-              values[k]);
-          discount *= this.gamma * this.gae_lambda;
-        }
-        advantage[t] = a_t;
-      }
-
-      // 3️⃣ Für jeden Batch die Actor/Critic Updates
       for (const batch of batches) {
         tf.tidy(() => {
-          const batchStates = tf.tensor2d(batch.map((i) => states[i])); // [batch, stateDim]
-          const batchActions = tf.tensor2d(batch.map((i) => actions[i])); // [batch]
+          const batchStates = tf.tensor2d(
+            batch.map((i) => states[i]),
+            [batch.length, states[0].length],
+          );
 
-          const batchOldProbs = tf.tensor1d(batch.map((i) => probabilities[i])); // [batch]
-          const batchAdvantage = tf.tensor1d(batch.map((i) => advantage[i])); // [batch]
-          const batchReturns = tf.tensor1d(
-            batch.map((i) => advantage[i] + values[i]),
-          ); // [batch]
+          const batchActions = tf.tensor1d(
+            batch.map((i) => actions[i]),
+            "int32",
+          );
+          const batchIds = tf.tensor1d(
+            batch.map((i) => ids[i]),
+            "int32",
+          );
 
-          // -------- Actor Loss --------
+          const batchOldLogProbs = tf.tensor1d(
+            batch.map((i) => probabilities[i]),
+          );
+
+          let batchAdv = tf.tensor1d(batch.map((i) => advantage[i]));
+          const batchReturns = tf.tensor1d(batch.map((i) => returns[i]));
+
+          // ---- Advantage Normalisierung ----
+          const mean = tf.mean(batchAdv);
+          const std = tf.moments(batchAdv).variance.sqrt().add(1e-8);
+          batchAdv = batchAdv.sub(mean).div(std);
+
+          // ================= ACTOR =================
           this.actor_optimizer.minimize(() => {
-            const logits = this.actor.forward(batchStates);
+            const [actionLogits, idLogits] = this.actor.forward(batchStates);
 
-            const actionLogits = logits[0].as1D();
-            const idLogits = logits[1].as1D();
+            // ---- Action log prob ----
 
-            // log_prob berechnen
-            const logProbs = tf.logSoftmax(actionLogits); // [batch, n_actions]
-            const oneHotActions = tf.oneHot(batchActions, this.n_actions); // [batch, n_actions]
-            const newLogProb = tf.sum(logProbs.mul(oneHotActions), 1); // [batch]
+            const actionLogProbs = tf.logSoftmax(actionLogits);
 
-            const probRatio = tf.exp(newLogProb.sub(batchOldProbs)); // ratio = new/old
-            const weightedProbs = probRatio.mul(batchAdvantage);
+            const oneHotActions = tf.oneHot(batchActions, this.n_actions);
+            const newActionLogProb = tf.sum(
+              actionLogProbs.mul(oneHotActions),
+              1,
+            );
+
+            const validIds = Array.from({ length: todos }, (x, i) => i);
+
+            const idMask2D = tf.tensor2d(
+              batch.map(() =>
+                Array.from({ length: MAX_TODOS }, (_, i) =>
+                  validIds.includes(i) ? 0 : -1e9,
+                ),
+              ),
+            ); // shape [batch, MAX_TODOS]
+
+            // 2. Mask auf die logits anwenden
+            const maskedIdLogits = idLogits.add(idMask2D);
+
+            // Logits maskieren: ungültige IDs auf -1e9 setzen
+
+            // ---- ID log prob ----
+            const idLogProbs = tf.logSoftmax(maskedIdLogits);
+
+            const oneHotIds = tf.oneHot(batchIds, MAX_TODOS);
+            const newIdLogProb = tf.sum(idLogProbs.mul(oneHotIds), 1);
+
+            // ---- TOTAL LOG PROB ----
+
+            const newTotalLogProb = newActionLogProb.add(newIdLogProb);
+
+            const ratio = tf.exp(tf.sub(newTotalLogProb, batchOldLogProbs));
 
             const clippedRatio = tf.clipByValue(
-              probRatio,
+              ratio,
               1 - this.policy_clip,
               1 + this.policy_clip,
             );
-            const weightedClipped = clippedRatio.mul(batchAdvantage);
 
-            const actorLoss = tf
-              .mean(tf.minimum(weightedProbs, weightedClipped).mul(-1))
-              .asScalar();
+            const clipped = clippedRatio.mul(batchAdv);
 
-            return actorLoss;
+            const policyLoss = tf.neg(
+              tf.mean(tf.minimum(tf.mul(ratio, batchAdv), clipped)),
+            );
+
+            // ---- Entropy Bonus ----
+            const entropyAction = tf.mean(
+              tf.sum(tf.exp(actionLogProbs).mul(actionLogProbs).mul(-1), 1),
+            );
+
+            const entropyId = tf.mean(
+              tf.sum(tf.exp(idLogProbs).mul(idLogProbs).mul(-1), 1),
+            );
+
+            const entropy = entropyAction.add(entropyId);
+
+            return policyLoss.sub(entropy.mul(0.0055)).asScalar();
           });
 
-          // -------- Critic Loss --------
+          // ================= CRITIC =================
           this.critic_optimizer.minimize(() => {
-            const criticPred = this.critic.forward(batchStates) as tf.Tensor1D;
-            const criticLoss = tf.losses.meanSquaredError(
-              batchReturns,
-              criticPred,
-            );
-            return criticLoss.asScalar();
+            const criticValue = this.critic.forward(batchStates) as tf.Tensor2D;
+
+            const valueLoss = tf.losses
+              .meanSquaredError(batchReturns, criticValue.as1D())
+              .asScalar();
+
+            return valueLoss;
           });
         });
       }
     }
 
     this.memory.clear_memory();
+
+    console.log("DELETE");
   }
 }

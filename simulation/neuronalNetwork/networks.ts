@@ -1,4 +1,5 @@
 import * as tf from "@tensorflow/tfjs-node";
+import { MAX_TODOS } from "../../util/utility.js";
 
 export class CriticNetwork {
   public network: tf.LayersModel;
@@ -11,13 +12,13 @@ export class CriticNetwork {
   }
 
   forward(state: tf.Tensor2D) {
-    return this.network.predict(state);
+    return this.network.apply(state, { training: true });
   }
 
   private buildModel(
     input_dim: number,
-    fc1_dims: number = 256,
-    fc2_dims: number = 256,
+    fc1_dims: number = 32,
+    fc2_dims: number = 32,
   ): tf.LayersModel {
     const model = tf.sequential();
     model.add(
@@ -37,7 +38,15 @@ export class CriticNetwork {
 
     model.add(
       tf.layers.dense({
+        units: fc2_dims,
+        activation: "relu",
+      }),
+    );
+
+    model.add(
+      tf.layers.dense({
         units: 1,
+        activation: "linear",
       }),
     );
 
@@ -81,7 +90,7 @@ export class ActorNetwork {
     // ---- Optionaler Index-Head ----
     // z.B. Index-Head als Single Neuron → gibt “Task-Index-Wert” (Continuous) zurück
     const index_head = tf.layers
-      .dense({ units: 1 })
+      .dense({ units: MAX_TODOS })
       .apply(fc2) as tf.SymbolicTensor;
 
     // ---- Modell mit 2 Outputs ----
@@ -95,9 +104,10 @@ export class ActorNetwork {
 
   forward(state: tf.Tensor2D): [tf.Tensor, tf.Tensor] {
     // predict gibt Array zurück, weil 2 Outputs
-    const [policy_logits, index_output] = this.network.predict(
-      state,
-    ) as tf.Tensor[];
+    const [policy_logits, index_output] = this.network.apply(state, {
+      training: true,
+    }) as tf.Tensor[];
+
     return [policy_logits, index_output];
   }
 }

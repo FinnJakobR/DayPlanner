@@ -19,6 +19,7 @@ import State from "../simulation/state.js";
 
 export const MAX_TODOS = 100;
 export const STEP_IN_MIN = 2;
+export const MAX_PRIORITY = 30;
 
 export const MIN_BLOCK_LENGTH_IN_MIN = 5;
 
@@ -173,8 +174,6 @@ export function cloneState(s: State): State {
   newState.remaining_tasks = s.remaining_tasks;
   newState.stress = s.stress;
   newState.time = s.time;
-
-  newState.nextDeadlineInMinutes = s.nextDeadlineInMinutes;
 
   newState.scheudle = s.scheudle.map((a) => {
     const newTask = new Task({
