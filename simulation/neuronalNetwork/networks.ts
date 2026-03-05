@@ -46,7 +46,6 @@ export class CriticNetwork {
     model.add(
       tf.layers.dense({
         units: 1,
-        activation: "linear",
       }),
     );
 

@@ -1,9 +1,9 @@
 import * as tf from "@tensorflow/tfjs-node";
-import Enviorment from "./enviorment.js";
+import Enviorment from "../simulation/enviorment.js";
 import {
   actionToVector,
   stateToVector,
-} from "./neuronalNetwork/preprocessing.js";
+} from "../simulation/neuronalNetwork/preprocessing.js";
 import {
   DAY_END_TIME,
   DAY_START_TIME,
@@ -11,7 +11,7 @@ import {
   inMinutes,
   Timing,
 } from "../models/time.js";
-import { Action, ActionType } from "./action.js";
+import { Action, ActionType } from "../simulation/action.js";
 import {
   getRandomArrayIndex,
   getRandomInt,
@@ -20,12 +20,12 @@ import {
   unreachable,
 } from "../util/utility.js";
 import { Assignment } from "../csp/csp.js";
-import State from "./state.js";
-import StepResult from "./step.js";
+import State from "../simulation/state.js";
+import StepResult from "../simulation/step.js";
 import { show } from "../util/debug.js";
 import { getRandomTimeInTask } from "../tests/tests.js";
 
-import Agent from "./agent.js";
+import Agent from "../simulation/agent.js";
 import { ActivityType } from "../models/task.js";
 import { appendFileSync, fsync, writeFileSync } from "fs";
 import plan_day from "../dayplanner.js";
@@ -49,13 +49,15 @@ export default async function trainModel() {
   let n_steps = 0;
   let score_history = [];
   let avg_score = 0;
+  let i = 0;
 
   writeFileSync("./score.txt", "");
 
   for (let ep = 0; ep < EPISODES; ep++) {
     await env.resetWithFixedTasks(generatedTask);
-    console.log(generatedTask.length);
     let state = env.currentState;
+
+    console.log(state);
 
     let encodedState = stateToVector(state);
 
@@ -95,18 +97,21 @@ export default async function trainModel() {
       state = res.nextState;
       encodedState = stateToVector(state);
       score_history.push(score);
-      avg_score = tf.mean(score_history.slice(-100)).dataSync()[0];
+      avg_score = tf.mean(score_history.slice(-i)).dataSync()[0];
 
       if (avg_score > best_score) {
         best_score = avg_score;
         //save here
       }
 
+      i++;
+
       done = res.done;
     }
 
     appendFileSync("./score.txt", `${avg_score}\n`, { encoding: "utf-8" });
 
+    i = 0;
     console.log("epsiode", ep);
     console.log("score", best_score);
     console.log("avg score", avg_score);

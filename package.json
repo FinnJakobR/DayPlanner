@@ -5,8 +5,12 @@
   "type": "module",
   "scripts": {
     "start": "tsc && node ./build/dayplanner.js",
-    "test": "tsc && node ./build/tests/tests.js",
-    "train": "tsc && node ./build/simulation/train.js"
+    "test:evolution": "tsc && node ./build/tests/tests.js",
+    "test:saveScheudle": "tsc && node ./build/tests/generateScheudleToFile.js",
+    "train:fromFile": "tsc && node ./build/train/trainFromFile.js",
+    "train:fixedRandom": "tsc && node ./build/train/trainFixedRandom.js"
+
+
   },
   "keywords": [],
   "author": "",

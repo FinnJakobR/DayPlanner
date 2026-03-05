@@ -12,11 +12,12 @@ export default class Agent {
   private critic_optimizer: tf.AdamOptimizer;
   private actor_optimizer: tf.AdamOptimizer;
   private gamma: number = 0.99;
-  private learning_rate: number = 1e-3;
+  private learning_rate: number = 1e-3; // 1e-3
   private policy_clip: number = 0.2;
   private n_epochs: number = 5;
-  private gae_lambda: number = 0.95;
-  private batch_size: number = 20;
+  private gae_lambda: number = 0.97;
+  private batch_size: number = 1000;
+  private entropy: number = 0.1; // 0.00054;
   private checkpoint_dir: string;
   private memory: Memory;
   private n_actions: number;
@@ -70,57 +71,48 @@ export default class Agent {
   }
 
   choose_action(state: tf.Tensor2D, scheudle: Assignment[]) {
-    const logits = this.actor.forward(state);
-    const values = this.critic.forward(state) as tf.Tensor2D;
+    return tf.tidy(() => {
+      const logits = this.actor.forward(state);
+      const values = this.critic.forward(state) as tf.Tensor2D;
 
-    const actionLogits = logits[0].as2D(1, 6);
-    const idLogits = logits[1];
+      const actionLogits = logits[0].as2D(1, 6);
+      const idLogits = logits[1];
 
-    const validIds = Array.from({ length: scheudle.length }, (x, i) => i);
+      const validIds = Array.from({ length: scheudle.length }, (x, i) => i);
 
-    const idMask = tf.tensor1d(
-      Array.from({ length: MAX_TODOS }, (_, i) =>
-        validIds.includes(i) ? 1 : 0,
-      ),
-    );
+      const idMask = tf.tensor1d(
+        Array.from({ length: MAX_TODOS }, (_, i) =>
+          validIds.includes(i) ? 1 : 0,
+        ),
+      );
 
-    // Logits maskieren: ungültige IDs auf -1e9 setzen
-    const maskedIdLogits = idLogits
-      .add(idMask.sub(1).mul(1e11))
-      .as2D(1, MAX_TODOS);
+      // Logits maskieren: ungültige IDs auf -1e9 setzen
+      const maskedIdLogits = idLogits
+        .add(idMask.sub(1).mul(1e11))
+        .as2D(1, MAX_TODOS);
 
-    // Jetzt sampeln
+      // Jetzt sampeln
 
-    const ids = tf.multinomial(maskedIdLogits, 1);
+      const ids = tf.multinomial(maskedIdLogits, 1);
+      const actions = tf.multinomial(actionLogits, 1);
 
-    const idlogProbs = tf.logSoftmax(maskedIdLogits);
+      const newActionLogProb = this.logP(actionLogits, actions, this.n_actions);
+      const newIdLogProb = this.logP(idLogits, ids, MAX_TODOS);
 
-    const actions = tf.multinomial(actionLogits, 1);
-    const ActionlogProbs = tf.logSoftmax(actionLogits);
+      const action = actions.dataSync()[0];
+      const value = values.dataSync()[0];
+      const log_prob = newActionLogProb.dataSync()[0];
+      const id = ids.dataSync()[0];
+      const idlog_prob = newIdLogProb.dataSync()[0];
 
-    const newActionLogProb = tf.sum(
-      ActionlogProbs.mul(tf.oneHot(actions.squeeze(), this.n_actions)),
-      1,
-    );
-
-    const newIdLogProb = tf.sum(
-      idlogProbs.mul(tf.oneHot(ids.squeeze(), MAX_TODOS)),
-      1,
-    );
-
-    const action = actions.dataSync()[0];
-    const value = values.dataSync()[0];
-    const log_prob = newActionLogProb.dataSync()[0];
-    const id = ids.dataSync()[0];
-    const idlog_prob = newIdLogProb.dataSync()[0];
-
-    return {
-      action: action,
-      id: id,
-      idlog_prob: idlog_prob,
-      log_prob: log_prob,
-      value: value,
-    };
+      return {
+        action: action,
+        id: id,
+        idlog_prob: idlog_prob,
+        log_prob: log_prob,
+        value: value,
+      };
+    });
   }
 
   async learn(todos: number) {
@@ -147,7 +139,7 @@ export default class Agent {
         critic_values[t];
 
       gae = delta + this.gamma * this.gae_lambda * (dones[t] ? 0 : 1) * gae;
-      advantage[t] = gae;
+      advantage[t] = critic_values[t];
     }
 
     const returns = advantage.map((a, i) => a + critic_values[i]);
@@ -188,12 +180,10 @@ export default class Agent {
 
             // ---- Action log prob ----
 
-            const actionLogProbs = tf.logSoftmax(actionLogits);
-
-            const oneHotActions = tf.oneHot(batchActions, this.n_actions);
-            const newActionLogProb = tf.sum(
-              actionLogProbs.mul(oneHotActions),
-              1,
+            const actionLogP = this.logP(
+              actionLogits,
+              batchActions,
+              this.n_actions,
             );
 
             const validIds = Array.from({ length: todos }, (x, i) => i);
@@ -212,41 +202,37 @@ export default class Agent {
             // Logits maskieren: ungültige IDs auf -1e9 setzen
 
             // ---- ID log prob ----
-            const idLogProbs = tf.logSoftmax(maskedIdLogits);
-
-            const oneHotIds = tf.oneHot(batchIds, MAX_TODOS);
-            const newIdLogProb = tf.sum(idLogProbs.mul(oneHotIds), 1);
-
+            const idLogP = this.logP(maskedIdLogits, batchIds, MAX_TODOS);
             // ---- TOTAL LOG PROB ----
 
-            const newTotalLogProb = newActionLogProb.add(newIdLogProb);
+            const newTotalLogProb = actionLogP.add(idLogP);
 
             const ratio = tf.exp(tf.sub(newTotalLogProb, batchOldLogProbs));
 
-            const clippedRatio = tf.clipByValue(
-              ratio,
-              1 - this.policy_clip,
-              1 + this.policy_clip,
+            const clippedRatio = tf.mul(
+              tf.clipByValue(ratio, 1 - this.policy_clip, 1 + this.policy_clip),
+              batchAdv,
             );
 
-            const clipped = clippedRatio.mul(batchAdv);
-
-            const policyLoss = tf.neg(
-              tf.mean(tf.minimum(tf.mul(ratio, batchAdv), clipped)),
+            const clippedLoss = tf.neg(
+              tf.mean(tf.minimum(tf.mul(ratio, batchAdv), clippedRatio)),
             );
 
             // ---- Entropy Bonus ----
-            const entropyAction = tf.mean(
-              tf.sum(tf.exp(actionLogProbs).mul(actionLogProbs).mul(-1), 1),
-            );
+            const entropyAction = this.CalcEntropy(actionLogP);
 
-            const entropyId = tf.mean(
-              tf.sum(tf.exp(idLogProbs).mul(idLogProbs).mul(-1), 1),
-            );
+            const entropyId = this.CalcEntropy(idLogP);
 
             const entropy = entropyAction.add(entropyId);
 
-            return policyLoss.sub(entropy.mul(0.0055)).asScalar();
+            const entropyLoss = tf.neg(tf.mean(entropy));
+
+            const policyLoss = tf.sub(
+              clippedLoss,
+              entropyLoss.mul(this.entropy),
+            );
+
+            return policyLoss.asScalar();
           });
 
           // ================= CRITIC =================
@@ -266,5 +252,25 @@ export default class Agent {
     this.memory.clear_memory();
 
     console.log("DELETE");
+  }
+
+  CalcEntropy(logits: tf.Tensor) {
+    const a0 = tf.sub(logits, tf.max(logits, -1, true));
+    const exp_a0 = tf.exp(a0);
+    const z0 = tf.sum(exp_a0, -1, true);
+
+    const p0 = tf.div(exp_a0, z0);
+
+    const entropy = tf.sum(tf.mul(p0, tf.sub(tf.log(z0), a0)), -1);
+
+    return entropy;
+  }
+
+  logP(logits: tf.Tensor, action: tf.Tensor, num: number) {
+    const logP_all = tf.softmax(logits);
+    const one_hot = tf.oneHot(action, num);
+    const logP = tf.sum(one_hot.mul(logP_all), -1);
+
+    return logP;
   }
 }

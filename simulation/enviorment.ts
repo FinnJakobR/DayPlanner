@@ -120,15 +120,18 @@ export default class Enviorment {
   }
 
   step(action: Action): StepResult {
+    this.currentError = EnvironmentError.NONE;
+
     let newState = this.applyAction(this.currentState, action);
     newState = this.simulate(newState);
     const reward = this.computeReward(this.currentState, newState, action);
     this.currentState = newState;
-    this.currentError = EnvironmentError.NONE;
 
     const done =
-      inMinutes(Timing.add(fromMinutes(newState.time), DAY_START_TIME)) >=
-      inMinutes(newState.scheudle[newState.scheudle.length - 1].end);
+      (inMinutes(Timing.add(fromMinutes(newState.time), DAY_START_TIME)) >=
+        inMinutes(newState.scheudle[newState.scheudle.length - 1].end) &&
+        this.currentState.delayInMinutes == 0) ||
+      this.currentError != EnvironmentError.NONE;
 
     return { nextState: newState, reward, done };
   }
@@ -185,6 +188,8 @@ export default class Enviorment {
 
     if (this.currentError != EnvironmentError.NONE) {
       reward -= 5;
+    } else {
+      reward += 15;
     }
 
     // ===== 6️⃣ Delay bestrafen =====
@@ -192,6 +197,8 @@ export default class Enviorment {
 
     // ===== 7️⃣ Kleine Step-Kosten (Anti-Idle) =====
     reward -= 0.01;
+
+    reward = Math.max(-50, Math.min(50, reward));
 
     return reward;
   }
@@ -752,6 +759,8 @@ export default class Enviorment {
     //schreibe das um für pausen!
     const pauses = getPauseTime(state.scheudle);
 
+    const time = Timing.add(DAY_START_TIME, fromMinutes(state.time));
+
     const end = state.isPause
       ? Timing.add(
           state.scheudle[state.current_task].end,
@@ -759,7 +768,7 @@ export default class Enviorment {
         )
       : state.scheudle[state.current_task].end;
 
-    if (isAfter(fromMinutes(state.time), end)) {
+    if (isAfter(time, end)) {
       //jetzt overrun
 
       state.delayInMinutes = Math.max(0, state.delayInMinutes - STEP_IN_MIN);
@@ -780,10 +789,7 @@ export default class Enviorment {
         : 1;
 
     if (!state.isPause) {
-      const start = Timing.diff(
-        fromMinutes(state.time),
-        state.scheudle[state.current_task].start,
-      );
+      const start = Timing.diff(time, state.scheudle[state.current_task].start);
 
       const minutesFocused = inMinutes(start);
       const prevMinutes = Math.max(0, minutesFocused - STEP_IN_MIN);
@@ -793,10 +799,7 @@ export default class Enviorment {
       state.energy -= energyDeepWeight * energyMentalHealth * delta;
     } else {
       const minutesPaused = inMinutes(
-        Timing.diff(
-          fromMinutes(state.time),
-          state.scheudle[state.current_task].end,
-        ),
+        Timing.diff(time, state.scheudle[state.current_task].end),
       );
 
       const prevMinutes = Math.max(0, minutesPaused - STEP_IN_MIN);
@@ -853,7 +856,7 @@ export default class Enviorment {
 
     state.stress = Math.max(0, Math.min(100, state.stress));
 
-    if (isAfter(fromMinutes(state.time), end) && state.delayInMinutes == 0) {
+    if (isAfter(time, end) && state.delayInMinutes == 0) {
       const { index, isPause } = findSlotByMinute(state.time, state.scheudle);
 
       state.current_task = index;
@@ -866,7 +869,7 @@ export default class Enviorment {
         mu += (60 - state.energy) / 150;
       }
 
-      state.delayInMinutes = Math.floor(sampleLogNormal(mu, 0.25));
+      state.delayInMinutes = Math.floor(sampleLogNormal(mu, 1.4));
     }
 
     return state;

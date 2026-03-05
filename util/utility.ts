@@ -1,3 +1,4 @@
+import { readFileSync, writeFileSync } from "node:fs";
 import { Assignment, CSP } from "../csp/csp.js";
 import { CSPVertex } from "../csp/structs.js";
 import { getPauseTime } from "../models/fitness.js";
@@ -16,6 +17,7 @@ import {
   Timing,
 } from "../models/time.js";
 import State from "../simulation/state.js";
+import path from "node:path";
 
 export const MAX_TODOS = 100;
 export const STEP_IN_MIN = 2;
@@ -25,6 +27,70 @@ export const MIN_BLOCK_LENGTH_IN_MIN = 5;
 
 export function timeOverflow(message: string) {
   throw Error("[TIME_OVERFLOW]: " + message);
+}
+
+export function saveScheudle(path: string, s: Assignment[]): void {
+  const str = JSON.stringify(s, null, "\t");
+
+  writeFileSync(path, str, { encoding: "utf-8" });
+}
+
+export function readScheudleFromFile(path: string): Assignment[] {
+  const str = readFileSync(path, { encoding: "utf-8" });
+
+  const jsonScheudle = JSON.parse(str);
+
+  const scheudle: Assignment[] = [];
+
+  for (const a of jsonScheudle) {
+    if (
+      !a.v.task.deadline.hour &&
+      !a.v.task.deadline.minute &&
+      !a.v.task.deadline.second
+    ) {
+      a.v.task.deadline = new Time({
+        hour: Infinity,
+        minute: Infinity,
+        second: Infinity,
+      }); // to 0;
+    }
+
+    const newTask = new Task({
+      title: a.v.task.title,
+      priority: a.v.task.priority,
+      activity: a.v.task.activity,
+      deadline: new Time({
+        hour: a.v.task.deadline.hour,
+        minute: a.v.task.deadline.minute,
+        second: a.v.task.deadline.second,
+      }),
+      duration: new Time({
+        hour: a.v.task.duration.hour,
+        minute: a.v.task.duration.minute,
+        second: a.v.task.duration.second,
+      }),
+    });
+
+    const newCsp = new CSPVertex(newTask);
+
+    const newA = new Assignment(
+      newCsp,
+      new Time({
+        hour: a.start.hour,
+        minute: a.start.minute,
+        second: a.start.second,
+      }),
+    );
+    newA.end = new Time({
+      hour: a.end.hour,
+      minute: a.end.minute,
+      second: a.end.second,
+    });
+
+    scheudle.push(newA);
+  }
+
+  return scheudle;
 }
 
 //rescheudle und mache die gaps dazwischen maximal

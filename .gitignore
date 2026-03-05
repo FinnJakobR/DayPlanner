@@ -1,3 +1,4 @@
 /build/
 /node_modules/
-score.txt
+*.txt
+*.json
