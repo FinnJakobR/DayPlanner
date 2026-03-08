@@ -73,6 +73,8 @@ export default class Enviorment {
   public currentState: State = new State();
   public isStarted: boolean = false;
   public currentError: EnvironmentError = EnvironmentError.NONE;
+  public currentStep = 0;
+  public oldStep = 0;
   public rewardWeights: RewardWeights = {
     structural: 1.0,
     energy: 0.0,
@@ -141,11 +143,11 @@ export default class Enviorment {
     let reward = this.computeReward(this.currentState, newState, action);
     this.currentState = newState;
 
-    console.log(
-      "min",
-      inMinutes(Timing.add(fromMinutes(newState.time), DAY_START_TIME)),
-      inMinutes(newState.scheudle[newState.scheudle.length - 1].end),
-    );
+    // console.log(
+    //   "min",
+    //   inMinutes(Timing.add(fromMinutes(newState.time), DAY_START_TIME)),
+    //   inMinutes(newState.scheudle[newState.scheudle.length - 1].end),
+    // );
 
     // if (
     //   inMinutes(Timing.add(fromMinutes(newState.time), DAY_START_TIME)) >=
@@ -159,7 +161,18 @@ export default class Enviorment {
       this.currentError != EnvironmentError.NONE;
 
     if (this.currentError != EnvironmentError.NONE) {
-      reward -= 20;
+      this.oldStep = this.currentStep;
+      this.currentStep = 0;
+    }
+
+    if (done && this.currentError == EnvironmentError.NONE) {
+      //reward += 500;
+      this.oldStep = this.currentStep;
+      this.currentStep = 0;
+    }
+
+    if (this.currentError == EnvironmentError.NONE) {
+      this.currentStep++;
     }
 
     this.currentError = EnvironmentError.NONE;
@@ -205,22 +218,23 @@ export default class Enviorment {
 
     reward = this.rewardWeights.stress * stressReward(reward, state, newState);
 
-    if (this.afterDeadline(next.scheudle)) {
-      reward -= this.rewardWeights.structural * 10;
-    }
+    // if (this.afterDeadline(next.scheudle)) {
+    //   reward -= this.rewardWeights.structural * 10;
+    // }
 
     if (this.currentError != EnvironmentError.NONE) {
-      reward -= this.rewardWeights.structural * 5;
-      console.log(reward);
+      reward -= this.rewardWeights.structural * 7;
     } else {
-      reward += this.rewardWeights.structural * 90;
+      reward += this.rewardWeights.structural * 10;
     }
+
+    //reward += (this.currentStep - this.oldStep) * 2;
 
     if (this.rewardWeights.delay > 0) {
       reward = this.rewardWeights.delay * delayReward(reward, state, newState);
     }
 
-    reward = Math.min(-300, Math.max(reward, 300));
+    //reward = Math.min(-300, Math.max(reward, 300));
 
     return reward;
   }

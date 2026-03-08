@@ -57,8 +57,6 @@ export default async function trainModel() {
 
     let encodedState = stateToVector(state);
 
-    console.log(encodedState.length);
-
     let done = false;
     let score = 0;
 
@@ -75,7 +73,7 @@ export default async function trainModel() {
         state.scheudle,
       );
 
-      const norm_reward = res.reward / 300;
+      const norm_reward = res.reward / 1;
 
       n_steps += 1;
       score += norm_reward;

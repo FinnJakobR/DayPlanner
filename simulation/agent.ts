@@ -12,12 +12,12 @@ export default class Agent {
   private critic_optimizer: tf.AdamOptimizer;
   private actor_optimizer: tf.AdamOptimizer;
   private gamma: number = 0.99;
-  private learning_rate: number = 3e-4; // 1e-3
-  private policy_clip: number = 0.8;
-  private n_epochs: number = 5;
+  private learning_rate: number = 1e-4; // 1e-3
+  private policy_clip: number = 0.4;
+  private n_epochs: number = 40;
   private gae_lambda: number = 0.1;
-  private batch_size: number = 600;
-  private entropy: number = 0.05; // 0.00054;
+  private batch_size: number = 2048;
+  private entropy: number = 0.04; // 0.00054;
   private checkpoint_dir: string;
   private memory: Memory;
   private n_actions: number;
@@ -142,6 +142,8 @@ export default class Agent {
       advantage[t] = gae;
     }
 
+    const returns = advantage.map((a, i) => a + critic_values[i]);
+
     // ---------- PPO Training ----------
     for (let epoch = 0; epoch < this.n_epochs; epoch++) {
       for (const batch of batches) {
@@ -169,7 +171,7 @@ export default class Agent {
             batch.map((i) => critic_values[i]),
           );
 
-          const batchReturns = batchAdv.add(batchCriticValues);
+          const batchReturns = tf.tensor1d(returns);
 
           // ---- Advantage Normalisierung ----
           const mean = tf.mean(batchAdv);
@@ -209,7 +211,7 @@ export default class Agent {
 
             const newTotalLogProb = actionLogP.add(idLogP);
 
-            const ratio = tf.exp(tf.sub(newTotalLogProb, batchOldLogProbs));
+            const ratio = tf.exp(newTotalLogProb.sub(batchOldLogProbs));
 
             const clippedRatio = tf.mul(
               tf.clipByValue(ratio, 1 - this.policy_clip, 1 + this.policy_clip),
