@@ -12,12 +12,12 @@ export default class Agent {
   private critic_optimizer: tf.AdamOptimizer;
   private actor_optimizer: tf.AdamOptimizer;
   private gamma: number = 0.99;
-  private learning_rate: number = 1e-3; // 1e-3
-  private policy_clip: number = 0.2;
+  private learning_rate: number = 3e-4; // 1e-3
+  private policy_clip: number = 0.8;
   private n_epochs: number = 5;
-  private gae_lambda: number = 0.97;
-  private batch_size: number = 1000;
-  private entropy: number = 0.1; // 0.00054;
+  private gae_lambda: number = 0.1;
+  private batch_size: number = 600;
+  private entropy: number = 0.05; // 0.00054;
   private checkpoint_dir: string;
   private memory: Memory;
   private n_actions: number;
@@ -135,14 +135,12 @@ export default class Agent {
       const nextValue = t === rewards.length - 1 ? 0 : critic_values[t + 1];
       const delta =
         rewards[t] +
-        this.gamma * nextValue * (dones[t] ? 0 : 1) -
+        this.gamma * nextValue * (dones[t + 1] ? 0 : 1) -
         critic_values[t];
 
-      gae = delta + this.gamma * this.gae_lambda * (dones[t] ? 0 : 1) * gae;
-      advantage[t] = critic_values[t];
+      gae = delta + this.gamma * this.gae_lambda * (dones[t + 1] ? 0 : 1) * gae;
+      advantage[t] = gae;
     }
-
-    const returns = advantage.map((a, i) => a + critic_values[i]);
 
     // ---------- PPO Training ----------
     for (let epoch = 0; epoch < this.n_epochs; epoch++) {
@@ -167,7 +165,11 @@ export default class Agent {
           );
 
           let batchAdv = tf.tensor1d(batch.map((i) => advantage[i]));
-          const batchReturns = tf.tensor1d(batch.map((i) => returns[i]));
+          const batchCriticValues = tf.tensor1d(
+            batch.map((i) => critic_values[i]),
+          );
+
+          const batchReturns = batchAdv.add(batchCriticValues);
 
           // ---- Advantage Normalisierung ----
           const mean = tf.mean(batchAdv);
@@ -231,6 +233,8 @@ export default class Agent {
               clippedLoss,
               entropyLoss.mul(this.entropy),
             );
+
+            policyLoss.print();
 
             return policyLoss.asScalar();
           });

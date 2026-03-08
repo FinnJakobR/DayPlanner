@@ -1,6 +1,10 @@
 import * as tf from "@tensorflow/tfjs-node";
 import Enviorment from "../simulation/enviorment.js";
-import { MAX_TODOS, readScheudleFromFile } from "../util/utility.js";
+import {
+  MAX_TODOS,
+  readScheudleFromFile,
+  STEP_IN_MIN,
+} from "../util/utility.js";
 import { ActionType } from "../simulation/action.js";
 import { appendFileSync, writeFileSync } from "node:fs";
 import {
@@ -8,7 +12,12 @@ import {
   stateToVector,
 } from "../simulation/neuronalNetwork/preprocessing.js";
 import Agent from "../simulation/agent.js";
-import { inMinutes } from "../models/time.js";
+import {
+  DAY_END_TIME,
+  DAY_START_TIME,
+  inMinutes,
+  Timing,
+} from "../models/time.js";
 import plan_day from "../dayplanner.js";
 import Task, { ActivityType } from "../models/task.js";
 
@@ -19,7 +28,7 @@ const EPISODES = 10000;
 
 export default async function trainModel() {
   const env = new Enviorment();
-  const N = 15;
+  const N = 2048;
   const input_dim = 5 + MAX_TODOS * 7;
   const scheudle_path = "./scheudle.json";
 
@@ -31,12 +40,18 @@ export default async function trainModel() {
   let learn_iters = 0;
   let n_steps = 0;
   let score_history = [];
+  let step_hinstory = [];
   let avg_score = 0;
   let i = 0;
 
+  let maxStepMean = 0;
+
+  let finished = false;
+  let ep = 0;
+
   writeFileSync("./score.txt", "");
 
-  for (let ep = 0; ep < EPISODES; ep++) {
+  while (!finished) {
     await env.resetWithFixedTasks(generatedTask);
     let state = env.currentState;
 
@@ -60,14 +75,16 @@ export default async function trainModel() {
         state.scheudle,
       );
 
+      const norm_reward = res.reward / 300;
+
       n_steps += 1;
-      score += res.reward;
+      score += norm_reward;
       agent.store(
         encodedState,
         encodedAction[0],
         idlog_prob + log_prob,
         value,
-        res.reward,
+        norm_reward,
         id,
         res.done,
       );
@@ -92,9 +109,21 @@ export default async function trainModel() {
       done = res.done;
     }
 
-    appendFileSync("./score.txt", `${avg_score} --> ${i} succesfull runs!\n`, {
-      encoding: "utf-8",
-    });
+    step_hinstory.push(i);
+
+    if (ep % 50 == 0) {
+      appendFileSync(
+        "./score.txt",
+        `---\navg_score: ${avg_score}\navg_steps: ${tf.mean(step_hinstory.slice(-100)).dataSync()[0]} / ${Math.floor(inMinutes(Timing.diff(DAY_END_TIME, DAY_START_TIME)) / STEP_IN_MIN)} \n---\n\n`,
+        {
+          encoding: "utf-8",
+        },
+      );
+    }
+
+    if (tf.mean(step_hinstory.slice(-100)).dataSync()[0] > maxStepMean) {
+      maxStepMean = tf.mean(step_hinstory.slice(-100)).dataSync()[0];
+    }
 
     i = 0;
     console.log("epsiode", ep);
@@ -102,6 +131,14 @@ export default async function trainModel() {
     console.log("avg score", avg_score / 10000);
     console.log("time steps", n_steps);
     console.log("learning_steps", learn_iters);
+
+    finished =
+      maxStepMean >=
+      Math.floor(
+        inMinutes(Timing.diff(DAY_END_TIME, DAY_START_TIME)) / STEP_IN_MIN,
+      );
+
+    ep++;
   }
 }
 trainModel();

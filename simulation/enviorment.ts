@@ -50,6 +50,14 @@ import {
   stressReward,
 } from "./reward.js";
 
+interface RewardWeights {
+  structural: number;
+  energy: number;
+  stress: number;
+  cognitive: number;
+  delay: number;
+}
+
 enum EnvironmentError {
   COULD_NOT_DELAY_TASK,
   COULD_NOT_INSERT_GAP,
@@ -65,6 +73,13 @@ export default class Enviorment {
   public currentState: State = new State();
   public isStarted: boolean = false;
   public currentError: EnvironmentError = EnvironmentError.NONE;
+  public rewardWeights: RewardWeights = {
+    structural: 1.0,
+    energy: 0.0,
+    stress: 0.0,
+    cognitive: 0.0,
+    delay: 0.0,
+  };
 
   constructor() {}
 
@@ -120,18 +135,34 @@ export default class Enviorment {
   }
 
   step(action: Action): StepResult {
-    this.currentError = EnvironmentError.NONE;
-
     let newState = this.applyAction(this.currentState, action);
     newState = this.simulate(newState);
-    const reward = this.computeReward(this.currentState, newState, action);
+
+    let reward = this.computeReward(this.currentState, newState, action);
     this.currentState = newState;
 
+    console.log(
+      "min",
+      inMinutes(Timing.add(fromMinutes(newState.time), DAY_START_TIME)),
+      inMinutes(newState.scheudle[newState.scheudle.length - 1].end),
+    );
+
+    // if (
+    //   inMinutes(Timing.add(fromMinutes(newState.time), DAY_START_TIME)) >=
+    //   inMinutes(newState.scheudle[newState.scheudle.length - 1].end)
+    // ) {
+    // }
+
     const done =
-      (inMinutes(Timing.add(fromMinutes(newState.time), DAY_START_TIME)) >=
-        inMinutes(newState.scheudle[newState.scheudle.length - 1].end) &&
-        this.currentState.delayInMinutes == 0) ||
+      inMinutes(Timing.add(fromMinutes(newState.time), DAY_START_TIME)) >=
+        inMinutes(newState.scheudle[newState.scheudle.length - 1].end) ||
       this.currentError != EnvironmentError.NONE;
+
+    if (this.currentError != EnvironmentError.NONE) {
+      reward -= 20;
+    }
+
+    this.currentError = EnvironmentError.NONE;
 
     return { nextState: newState, reward, done };
   }
@@ -166,39 +197,30 @@ export default class Enviorment {
     const prev = state;
     const next = newState;
 
-    reward = cognitiveBlocksRewards(reward, state, newState);
+    reward =
+      this.rewardWeights.cognitive *
+      cognitiveBlocksRewards(reward, state, newState);
 
-    // ===== 2️⃣ Energie stabil halten =====
+    reward = this.rewardWeights.energy * energyReward(reward, state, newState);
 
-    reward = energyReward(reward, state, newState);
+    reward = this.rewardWeights.stress * stressReward(reward, state, newState);
 
-    // ===== 3️⃣ Stress senken belohnen =====
-
-    reward = stressReward(reward, state, newState);
-
-    // ===== 4️⃣ Deadline-Verstoß stark bestrafen =====
     if (this.afterDeadline(next.scheudle)) {
-      reward -= 10;
-    }
-
-    // ===== 5️⃣ Overlap bestrafen =====
-    if (this.hasOverlapp(next.scheudle)) {
-      reward -= 5;
+      reward -= this.rewardWeights.structural * 10;
     }
 
     if (this.currentError != EnvironmentError.NONE) {
-      reward -= 5;
+      reward -= this.rewardWeights.structural * 5;
+      console.log(reward);
     } else {
-      reward += 15;
+      reward += this.rewardWeights.structural * 90;
     }
 
-    // ===== 6️⃣ Delay bestrafen =====
-    reward = delayReward(reward, state, newState);
+    if (this.rewardWeights.delay > 0) {
+      reward = this.rewardWeights.delay * delayReward(reward, state, newState);
+    }
 
-    // ===== 7️⃣ Kleine Step-Kosten (Anti-Idle) =====
-    reward -= 0.01;
-
-    reward = Math.max(-50, Math.min(50, reward));
+    reward = Math.min(-300, Math.max(reward, 300));
 
     return reward;
   }

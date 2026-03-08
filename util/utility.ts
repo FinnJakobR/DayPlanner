@@ -20,7 +20,7 @@ import State from "../simulation/state.js";
 import path from "node:path";
 
 export const MAX_TODOS = 100;
-export const STEP_IN_MIN = 2;
+export const STEP_IN_MIN = 10;
 export const MAX_PRIORITY = 30;
 
 export const MIN_BLOCK_LENGTH_IN_MIN = 5;
