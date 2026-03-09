@@ -37,6 +37,8 @@ export default async function trainModel() {
 
   const agent = new Agent(ActivityType.LENGTH - 1, input_dim, weightsPath);
 
+  await agent.load_model();
+
   let best_score = 0.0;
   let learn_iters = 0;
   let n_steps = 0;

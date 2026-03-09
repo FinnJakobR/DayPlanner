@@ -62,11 +62,11 @@ export default class Agent {
   async load_model() {
     console.log("load_model");
     this.actor.network = await tf.loadLayersModel(
-      this.checkpoint_dir + "actor",
+      this.checkpoint_dir + "actor/model.json",
     );
 
     this.critic.network = await tf.loadLayersModel(
-      this.checkpoint_dir + "critic",
+      this.checkpoint_dir + "critic/model.json",
     );
   }
 
