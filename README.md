@@ -1,24 +1,45 @@
-# DayPlanner 
+# DayPlanner
 
-## Generierung
-Dieser DayPlanner nutzt evolutionäres Lernen um Tasks nach meinen Bedürfnissen zu genieren.
+## Generation
 
-### Soft Constrains
-Soft Constains werden mittels Fitness Funktion innerhalb des Evolutionären Algorithmusses gelöst.
+This DayPlanner uses evolutionary learning to generate tasks according to my personal needs and preferences.
 
-### Hard Constrains
-Hard Constrains werden mittels selbst gebauter CSP-Engine gelöst. 
+### Soft Constraints
 
+Soft constraints are handled through a **fitness function** within the evolutionary algorithm.
+The fitness function evaluates candidate schedules based on criteria such as efficiency, balance, and preference alignment.
 
-## Scheudlen
-Scheudlen übernimmt ein Agent welche mittels Reinforcment Learning und [Proximal Policy Optimization](https://arxiv.org/abs/1707.06347) gelernt wurde. 
-Der Agent wurde auf *Stress-Managment*, *Energy-Managment*, *Location-Managment* und *Workslots* nach meinen individuellen Environment trainiert. 
+### Hard Constraints
 
-### Action
-Er kann folgende Actions 
-- **NO_ACTION** 
-- **SPLIT_TASK**
-- **INSERT_BREAK**
-- **FOCUS_TASK**
-- **PULL_TASK_EARLIER**
-- **DELAY_TASK**
+Hard constraints are enforced using a custom-built **Constraint Satisfaction Problem (CSP) engine**.
+This engine guarantees that fundamental requirements—such as time conflicts or logical dependencies—are always satisfied.
+
+---
+
+## Scheduling
+
+Scheduling is handled by an agent trained using reinforcement learning with **Proximal Policy Optimization (PPO)**.
+
+The agent was trained in a personalized environment focusing on:
+
+* **Stress management**
+* **Energy management**
+* **Location management**
+* **Work slot allocation**
+
+Proximal Policy Optimization is a policy-gradient reinforcement learning algorithm designed to provide **stable and efficient training**.
+It works by updating the policy while limiting how much it can change between updates using a clipped objective function.
+This prevents overly large policy updates that could destabilize training while still allowing the model to learn effectively from new experiences.
+
+---
+
+## Actions
+
+The agent can perform the following actions:
+
+* **NO_ACTION** – Leave the schedule unchanged.
+* **SPLIT_TASK** – Divide a task into smaller segments.
+* **INSERT_BREAK** – Insert a break to manage energy and stress.
+* **FOCUS_TASK** – Prioritize and allocate focused time to a task.
+* **PULL_TASK_EARLIER** – Move a task to an earlier time slot.
+* **DELAY_TASK** – Postpone a task to a later time slot.
