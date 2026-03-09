@@ -31,10 +31,11 @@ export default async function trainModel() {
   const N = 2048;
   const input_dim = 5 + MAX_TODOS * 7;
   const scheudle_path = "./scheudle.json";
+  const weightsPath = "file://./weights/";
 
   const generatedTask = readScheudleFromFile(scheudle_path);
 
-  const agent = new Agent(ActivityType.LENGTH - 1, input_dim, "");
+  const agent = new Agent(ActivityType.LENGTH - 1, input_dim, weightsPath);
 
   let best_score = 0.0;
   let learn_iters = 0;
@@ -121,6 +122,7 @@ export default async function trainModel() {
 
     if (tf.mean(step_hinstory.slice(-100)).dataSync()[0] > maxStepMean) {
       maxStepMean = tf.mean(step_hinstory.slice(-100)).dataSync()[0];
+      await agent.save_model();
     }
 
     i = 0;
@@ -134,7 +136,8 @@ export default async function trainModel() {
       maxStepMean >=
       Math.floor(
         inMinutes(Timing.diff(DAY_END_TIME, DAY_START_TIME)) / STEP_IN_MIN,
-      );
+      ) *
+        0.97;
 
     ep++;
   }
