@@ -13,11 +13,11 @@ export default class Agent {
   private actor_optimizer: tf.AdamOptimizer;
   private gamma: number = 0.99;
   private learning_rate: number = 1e-4; // 1e-3
-  private policy_clip: number = 0.4;
+  private policy_clip: number = 0.2;
   private n_epochs: number = 40;
   private gae_lambda: number = 0.1;
   private batch_size: number = 2048;
-  private entropy: number = 0.04; // 0.00054;
+  private entropy: number = 0.08; // 0.00054;
   private checkpoint_dir: string;
   private memory: Memory;
   private n_actions: number;
@@ -135,10 +135,10 @@ export default class Agent {
       const nextValue = t === rewards.length - 1 ? 0 : critic_values[t + 1];
       const delta =
         rewards[t] +
-        this.gamma * nextValue * (dones[t + 1] ? 0 : 1) -
+        this.gamma * nextValue * (dones[t] ? 0 : 1) -
         critic_values[t];
 
-      gae = delta + this.gamma * this.gae_lambda * (dones[t + 1] ? 0 : 1) * gae;
+      gae = delta + this.gamma * this.gae_lambda * (dones[t] ? 0 : 1) * gae;
       advantage[t] = gae;
     }
 
@@ -176,6 +176,11 @@ export default class Agent {
           // ---- Advantage Normalisierung ----
           const mean = tf.mean(batchAdv);
           const std = tf.moments(batchAdv).variance.sqrt().add(1e-8);
+
+          console.log("MEAN");
+          mean.print();
+          console.log("STD");
+          std.print();
           batchAdv = batchAdv.sub(mean).div(std);
 
           // ================= ACTOR =================

@@ -223,9 +223,9 @@ export default class Enviorment {
     // }
 
     if (this.currentError != EnvironmentError.NONE) {
-      reward -= this.rewardWeights.structural * 7;
+      reward -= this.rewardWeights.structural * 0.007;
     } else {
-      reward += this.rewardWeights.structural * 10;
+      reward += this.rewardWeights.structural * 0.1;
     }
 
     //reward += (this.currentStep - this.oldStep) * 2;
