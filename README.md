@@ -1,7 +1,6 @@
 # DayPlanner 
 
 ## Generierung
----
 Dieser DayPlanner nutzt evolutionäres Lernen um Tasks nach meinen Bedürfnissen zu genieren.
 
 ### Soft Constrains
@@ -12,7 +11,6 @@ Hard Constrains werden mittels selbst gebauter CSP-Engine gelöst.
 
 
 ## Scheudlen
----
 Scheudlen übernimmt ein Agent welche mittels Reinforcment Learning und [Proximal Policy Optimization](https://arxiv.org/abs/1707.06347) gelernt wurde. 
 Der Agent wurde auf *Stress-Managment*, *Energy-Managment*, *Location-Managment* und *Workslots* nach meinen individuellen Environment trainiert. 
 
