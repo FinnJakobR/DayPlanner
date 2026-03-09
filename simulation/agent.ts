@@ -15,9 +15,9 @@ export default class Agent {
   private learning_rate: number = 1e-4; // 1e-3
   private policy_clip: number = 0.2;
   private n_epochs: number = 40;
-  private gae_lambda: number = 0.1;
+  private gae_lambda: number = 0.5;
   private batch_size: number = 2048;
-  private entropy: number = 0.08; // 0.00054;
+  private entropy: number = 0.01; // 0.00054;
   private checkpoint_dir: string;
   private memory: Memory;
   private n_actions: number;
