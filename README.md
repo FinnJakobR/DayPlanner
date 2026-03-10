@@ -47,4 +47,4 @@ The agent can perform the following actions:
 
 ## Lerning 
 
-[Learn to use NO_ACTION as Fallback](./assets/lernNoError.png)
+![Learn to use NO_ACTION as Fallback](https://raw.githubusercontent.com/FinnJakobR/DayPlanner/refs/heads/main/assets/lernNoError.png)
