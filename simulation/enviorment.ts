@@ -761,13 +761,13 @@ export default class Enviorment {
     //TEST
 
     //check for time overlow
-    const faultTask = newState.scheudle.find((e) => e.start.hour > 24);
+    // const faultTask = newState.scheudle.find((e) => e.start.hour > 24);
 
-    if (faultTask) {
-      console.log(state, faultTask);
+    // if (faultTask) {
+    //   console.log(state, faultTask);
 
-      unreachable("Task sind einfach nach 0 Uhr!");
-    }
+    //   unreachable("Task sind einfach nach 0 Uhr!");
+    // }
 
     //check ob es weniger task als vorher sind!
     if (state.scheudle.length > newState.scheudle.length) {

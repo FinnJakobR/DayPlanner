@@ -22,11 +22,17 @@ export default class Agent {
   private memory: Memory;
   private n_actions: number;
 
-  constructor(n_actions: number, input_dim: number, checkpoint_dir: string) {
+  constructor(
+    n_actions: number,
+    input_dim: number,
+    checkpoint_dir: string,
+    n_steps: number,
+  ) {
     this.actor = new ActorNetwork(input_dim, n_actions);
     this.critic = new CriticNetwork(input_dim);
     this.critic_optimizer = tf.train.adam(this.learning_rate);
     this.actor_optimizer = tf.train.adam(this.learning_rate);
+    this.batch_size = n_steps;
 
     this.memory = new Memory(this.batch_size);
     this.checkpoint_dir = checkpoint_dir;

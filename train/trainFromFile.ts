@@ -35,7 +35,7 @@ export default async function trainModel() {
 
   const generatedTask = readScheudleFromFile(scheudle_path);
 
-  const agent = new Agent(ActivityType.LENGTH - 1, input_dim, weightsPath);
+  const agent = new Agent(ActivityType.LENGTH - 1, input_dim, weightsPath, N);
 
   await agent.load_model();
 
@@ -138,8 +138,7 @@ export default async function trainModel() {
       maxStepMean >=
       Math.floor(
         inMinutes(Timing.diff(DAY_END_TIME, DAY_START_TIME)) / STEP_IN_MIN,
-      ) *
-        0.97;
+      );
 
     ep++;
   }

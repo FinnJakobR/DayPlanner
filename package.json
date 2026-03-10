@@ -8,7 +8,8 @@
     "test:evolution": "tsc && node ./build/tests/tests.js",
     "test:saveScheudle": "tsc && node ./build/tests/generateScheudleToFile.js",
     "train:fromFile": "tsc && node ./build/train/trainFromFile.js",
-    "train:fixedRandom": "tsc && node ./build/train/trainFixedRandom.js"
+    "train:fixedRandom": "tsc && node ./build/train/trainFixedRandom.js",
+    "make:plot": "tsc && node ./build/tests/makePlot.js"
 
 
   },

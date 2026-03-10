@@ -1,14 +1,12 @@
-import { Assignment, CSP } from "./csp/csp.js";
+import { Assignment } from "./csp/csp.js";
 import crossover from "./models/crossover.js";
 import Fitness from "./models/fitness.js";
-import Genom, { TaskPriority } from "./models/genom.js";
-import { localImprove } from "./models/localsearch.js";
+import Genom from "./models/genom.js";
 import mutation from "./models/mutation.js";
 import { elitism, tournamentSelection } from "./models/selection.js";
 import Task, { ActivityType } from "./models/task.js";
-import { inSeconds, Time, Timing } from "./models/time.js";
-import { generateFakeTasks } from "./tests/fakeTasks.js";
-import { cloneGenom, decodeGenom, getRandomInt } from "./util/utility.js";
+import { Time } from "./models/time.js";
+import { cloneGenom, decodeGenom } from "./util/utility.js";
 
 const POPULATION = 70;
 
@@ -25,7 +23,7 @@ function createPopulation(tasks: Task[]): Genom[] {
 const plan_day = async (t: Task[]): Promise<Assignment[]> => {
   let nth_generation = 0;
 
-  const KONVERGENZE_LIMIT = 45; //getRandomInt(10, 20);
+  const KONVERGENZE_LIMIT = 3; //getRandomInt(10, 20);
 
   const tasks = t;
 

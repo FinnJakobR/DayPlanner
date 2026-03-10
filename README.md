@@ -43,3 +43,8 @@ The agent can perform the following actions:
 * **FOCUS_TASK** – Prioritize and allocate focused time to a task.
 * **PULL_TASK_EARLIER** – Move a task to an earlier time slot.
 * **DELAY_TASK** – Postpone a task to a later time slot.
+
+
+## Lerning 
+
+[Learn to use NO_ACTION as Fallback](./assets/lernNoError.png)

@@ -1,34 +1,26 @@
 import * as tf from "@tensorflow/tfjs-node";
 import Enviorment from "../simulation/enviorment.js";
 import {
+  MAX_TODOS,
+  readScheudleFromFile,
+  STEP_IN_MIN,
+} from "../util/utility.js";
+import { ActionType } from "../simulation/action.js";
+import { appendFileSync, writeFileSync } from "node:fs";
+import {
   actionToVector,
   stateToVector,
 } from "../simulation/neuronalNetwork/preprocessing.js";
+import Agent from "../simulation/agent.js";
 import {
   DAY_END_TIME,
   DAY_START_TIME,
-  fromMinutes,
   inMinutes,
   Timing,
 } from "../models/time.js";
-import { Action, ActionType } from "../simulation/action.js";
-import {
-  getRandomArrayIndex,
-  getRandomInt,
-  getRandomTimeFromIntervall,
-  MAX_TODOS,
-  unreachable,
-} from "../util/utility.js";
-import { Assignment } from "../csp/csp.js";
-import State from "../simulation/state.js";
-import StepResult from "../simulation/step.js";
-import { show } from "../util/debug.js";
-import { getRandomTimeInTask } from "../tests/tests.js";
-
-import Agent from "../simulation/agent.js";
-import { ActivityType } from "../models/task.js";
-import { appendFileSync, fsync, writeFileSync } from "fs";
 import plan_day from "../dayplanner.js";
+import Task, { ActivityType } from "../models/task.js";
+import makePlot from "../util/plot.js";
 
 // const GAMMA = 0.99;
 // const CLIP_EPS = 0.2;
@@ -37,27 +29,32 @@ const EPISODES = 10000;
 
 export default async function trainModel() {
   const env = new Enviorment();
-  const N = 20;
+  const N = 2048;
   const input_dim = 5 + MAX_TODOS * 7;
+  const weightsPath = "file://./weights/";
 
-  const generatedTask = await plan_day(env.generateTasks());
+  const agent = new Agent(ActivityType.LENGTH - 1, input_dim, weightsPath, N);
 
-  const agent = new Agent(ActivityType.LENGTH - 1, input_dim, "");
+  await agent.load_model();
 
   let best_score = 0.0;
   let learn_iters = 0;
   let n_steps = 0;
   let score_history = [];
+  let step_hinstory = [];
   let avg_score = 0;
   let i = 0;
 
+  let maxStepMean = 0;
+
+  let finished = false;
+  let ep = 0;
+
   writeFileSync("./score.txt", "");
 
-  for (let ep = 0; ep < EPISODES; ep++) {
-    await env.resetWithFixedTasks(generatedTask);
+  while (!finished) {
+    await env.reset();
     let state = env.currentState;
-
-    console.log(state);
 
     let encodedState = stateToVector(state);
 
@@ -77,14 +74,16 @@ export default async function trainModel() {
         state.scheudle,
       );
 
+      const norm_reward = res.reward / 1;
+
       n_steps += 1;
-      score += res.reward;
+      score += norm_reward;
       agent.store(
         encodedState,
         encodedAction[0],
         idlog_prob + log_prob,
         value,
-        res.reward,
+        norm_reward,
         id,
         res.done,
       );
@@ -97,7 +96,7 @@ export default async function trainModel() {
       state = res.nextState;
       encodedState = stateToVector(state);
       score_history.push(score);
-      avg_score = tf.mean(score_history.slice(-i)).dataSync()[0];
+      avg_score = tf.mean(score_history.slice(-100)).dataSync()[0];
 
       if (avg_score > best_score) {
         best_score = avg_score;
@@ -109,14 +108,41 @@ export default async function trainModel() {
       done = res.done;
     }
 
-    appendFileSync("./score.txt", `${avg_score}\n`, { encoding: "utf-8" });
+    step_hinstory.push(i);
+
+    if (ep % 10 == 0) {
+      appendFileSync(
+        "./score.txt",
+        `---\navg_score: ${avg_score}\navg_steps: ${tf.mean(step_hinstory.slice(-100)).dataSync()[0]} / ${Math.floor(inMinutes(Timing.diff(DAY_END_TIME, DAY_START_TIME)) / STEP_IN_MIN)} \n---\n\n`,
+        {
+          encoding: "utf-8",
+        },
+      );
+    }
+
+    if (tf.mean(step_hinstory.slice(-100)).dataSync()[0] > maxStepMean) {
+      maxStepMean = tf.mean(step_hinstory.slice(-100)).dataSync()[0];
+
+      if (ep > 100 && maxStepMean > 60) await agent.save_model();
+    }
 
     i = 0;
     console.log("epsiode", ep);
     console.log("score", best_score);
-    console.log("avg score", avg_score);
+    console.log("avg score", avg_score / 10000);
     console.log("time steps", n_steps);
     console.log("learning_steps", learn_iters);
+
+    finished =
+      ep > 100 &&
+      maxStepMean >=
+        Math.floor(
+          inMinutes(Timing.diff(DAY_END_TIME, DAY_START_TIME)) / STEP_IN_MIN,
+        );
+
+    ep++;
   }
+
+  makePlot("./score.txt", 10, "NoErrorRandom");
 }
 trainModel();
